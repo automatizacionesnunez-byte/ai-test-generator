@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TestMode {
+  MODE_20
+  MODE_40
+  MODE_60
+  MODE_80
+  MODE_100
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model Document {
+  id          String   @id @default(uuid())
+  title       String
+  s3Key       String
+  fileType    String
+  textContent String?  @db.Text
+  topics      Json?    // ["Derecho Civil", "Procesal Penal", ...]
+  processed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  tests   Test[]
+  history GenerationHistory[]
+}
+
+model Test {
+  id         String     @id @default(uuid())
+  documentId String?
+  topic      String?    // tema seleccionado (null = todos)
+  title      String
+  mode       TestMode
+  difficulty Difficulty @default(MEDIUM)
+  timeLimit  Int?
+  score      Int?
+  totalQ     Int        @default(20)
+  createdAt  DateTime   @default(now())
+
+  document  Document?  @relation(fields: [documentId], references: [id])
+  questions Question[]
+}
+
+model Question {
+  id            String   @id @default(uuid())
+  testId        String
+  content       String
+  options       Json
+  correctAnswer String
+  explanation   String?
+  createdAt     DateTime @default(now())
+
+  test Test @relation(fields: [testId], references: [id])
+}
+
+model GenerationHistory {
+  id           String   @id @default(uuid())
+  documentId   String
+  promptUsed   String
+  tokensUsed   Int?
+  responseTime Int?
+  createdAt    DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id])
+}

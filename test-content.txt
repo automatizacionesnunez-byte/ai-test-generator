@@ -1,0 +1,56 @@
+TEMA 1: EL DERECHO PROCESAL CIVIL
+
+1.1 Concepto y objeto del Derecho Procesal
+El Derecho Procesal Civil es la rama del Derecho que regula el proceso civil mediante el cual se resuelven los conflictos jurídicos entre particulares. Su objeto principal es garantizar la tutela judicial efectiva reconocida en el artículo 24 de la Constitución Española.
+
+1.2 Las fuentes del Derecho Procesal
+Las fuentes principales son: la Constitución Española, la Ley Orgánica del Poder Judicial (LOPJ), la Ley de Enjuiciamiento Civil (LEC) 1/2000, los tratados internacionales, y la jurisprudencia del Tribunal Supremo y del Tribunal Constitucional.
+
+1.3 Los principios procesales
+- Principio dispositivo: las partes tienen el poder de disposición sobre el proceso.
+- Principio de contradicción: ambas partes deben tener la oportunidad de ser oídas.
+- Principio de igualdad procesal: las partes deben gozar de igualdad de armas.
+- Principio de preclusión: cada acto procesal debe realizarse en el plazo establecido.
+- Principio de inmediación: el juez debe presenciar personalmente la práctica de las pruebas.
+
+TEMA 2: LA JURISDICCIÓN Y LA COMPETENCIA
+
+2.1 Concepto de jurisdicción
+La jurisdicción es la potestad de juzgar y hacer ejecutar lo juzgado que corresponde exclusivamente a los Juzgados y Tribunales determinados por las leyes, según el artículo 117.3 de la Constitución.
+
+2.2 Tipos de competencia
+- Competencia objetiva: determina qué tipo de órgano jurisdiccional es competente por razón de la materia o la cuantía.
+- Competencia funcional: determina qué órgano es competente en cada fase o instancia del proceso.
+- Competencia territorial: determina qué concreto órgano jurisdiccional, entre los de igual tipo, es el competente en función del territorio.
+
+2.3 Los fueros de competencia territorial
+El fuero general para las personas físicas es el del domicilio del demandado (art. 50 LEC). Para las personas jurídicas, es el de su domicilio social (art. 51 LEC). Existen fueros especiales para determinadas materias.
+
+TEMA 3: LAS PARTES PROCESALES
+
+3.1 Concepto de parte
+Son partes procesales quienes comparecen en el proceso como demandante y demandado. La capacidad para ser parte la tienen todas las personas físicas y jurídicas.
+
+3.2 La capacidad procesal
+La capacidad procesal es la aptitud para actuar válidamente en el proceso. Corresponde a quienes se hallan en el pleno ejercicio de sus derechos civiles. Los menores e incapacitados actúan a través de sus representantes legales.
+
+3.3 La legitimación
+- Legitimación activa: corresponde a quien afirma ser titular del derecho subjetivo cuya tutela pretende.
+- Legitimación pasiva: corresponde a quien es demandado como obligado a satisfacer la pretensión del actor.
+- Legitimación extraordinaria: permite accionar a quien no es titular del derecho (ej: acciones del Ministerio Fiscal).
+
+3.4 La postulación procesal
+En el proceso civil es obligatoria la intervención de abogado y procurador como regla general (arts. 23-24 LEC), con excepciones como los juicios verbales de cuantía inferior a 2.000 euros.
+
+TEMA 4: EL OBJETO DEL PROCESO
+
+4.1 La pretensión procesal
+La pretensión es la petición fundada que se dirige a un órgano jurisdiccional frente a otra persona sobre un bien de la vida. Está compuesta por: los sujetos, el petitum (lo que se pide) y la causa petendi (los hechos y fundamentos jurídicos).
+
+4.2 Tipos de pretensiones
+- Pretensiones declarativas: buscan una declaración judicial sobre la existencia o inexistencia de un derecho.
+- Pretensiones constitutivas: pretenden la creación, modificación o extinción de una relación jurídica.
+- Pretensiones de condena: solicitan que se condene al demandado a realizar una prestación.
+
+4.3 La acumulación de acciones
+La LEC permite la acumulación objetiva (varias pretensiones entre las mismas partes) y la acumulación subjetiva (varios demandantes o demandados). Los requisitos son la competencia del tribunal y la adecuación del procedimiento.
