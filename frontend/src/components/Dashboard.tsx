@@ -161,6 +161,7 @@ export default function Dashboard() {
                             <p className="text-slate-500">john@testgen.ai</p>
                         </div>
                     </div>
+                </div>
             </aside>
 
             {/* Main Content Area */}
