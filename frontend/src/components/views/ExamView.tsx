@@ -74,7 +74,9 @@ export default function ExamView({ data, onBack, onRetake }: { data: ExamData, o
                 score,
                 total,
                 difficulty: "Generado por IA",
-                date: new Date().toLocaleDateString('es-ES')
+                date: new Date().toLocaleDateString('es-ES'),
+                examData: data,
+                userAnswers: answers
             };
             try {
                 const existing = JSON.parse(localStorage.getItem('examHistory') || '[]');

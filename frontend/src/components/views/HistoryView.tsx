@@ -1,11 +1,13 @@
 "use client";
 
 import React from 'react';
-import { History, Eye, Trash2, ArrowRightCircle, CheckCircle2, XCircle, Clock, BarChart3 } from 'lucide-react';
+import { History, Eye, Trash2, ArrowRightCircle, CheckCircle2, XCircle, Clock, BarChart3, Download, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { cn } from '@/lib/utils';
 
 export default function HistoryView() {
     const [history, setHistory] = React.useState<any[]>([]);
+    const [previewTest, setPreviewTest] = React.useState<any>(null);
 
     React.useEffect(() => {
         try {
@@ -25,6 +27,88 @@ export default function HistoryView() {
     const averageScore = history.length > 0
         ? (history.reduce((acc, curr) => acc + (curr.score / curr.total) * 10, 0) / history.length)
         : 0;
+
+    if (previewTest) {
+        const data = previewTest.examData;
+        const answers = previewTest.userAnswers;
+        const score = previewTest.score;
+        const ratio = score / data.questions.length;
+
+        return (
+            <div className="max-w-4xl mx-auto space-y-12 pb-20 print:space-y-6 print:pb-0 animate-in fade-in">
+                <div className="text-center space-y-4">
+                    <motion.div
+                        initial={{ scale: 0.5, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className={cn(
+                            "w-32 h-32 rounded-full mx-auto flex items-center justify-center border-8",
+                            ratio >= 0.8 ? "border-green-500/20 text-green-500" :
+                                ratio >= 0.5 ? "border-yellow-500/20 text-yellow-500" :
+                                    "border-red-500/20 text-red-500"
+                        )}
+                    >
+                        <span className="text-4xl font-black">{score} / {data.questions.length}</span>
+                    </motion.div>
+                    <h2 className="text-4xl font-black text-white">Revisión de Examen</h2>
+                    <p className="text-slate-400">Obtuviste un {Math.round(ratio * 100)}% de aciertos en "{data.examTitle}".</p>
+                </div>
+
+                <div className="space-y-6">
+                    {data.questions.map((q: any, i: number) => (
+                        <div key={q.id} className="p-8 rounded-3xl glass border border-white/5 space-y-6 relative overflow-hidden">
+                            <div className="flex items-start gap-4">
+                                <div className={cn(
+                                    "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold",
+                                    answers[i] === q.correctAnswer ? "bg-green-500/20 text-green-500" : "bg-red-500/20 text-red-500"
+                                )}>
+                                    {i + 1}
+                                </div>
+                                <h3 className="text-lg font-bold text-white leading-relaxed">{q.question}</h3>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3 pl-12">
+                                {q.options.map((opt: string, optIdx: number) => (
+                                    <div
+                                        key={optIdx}
+                                        className={cn(
+                                            "p-4 rounded-xl border transition-all text-sm",
+                                            optIdx === q.correctAnswer ? "bg-green-500/10 border-green-500/30 text-green-400" :
+                                                optIdx === answers[i] ? "bg-red-500/10 border-red-500/30 text-red-400" :
+                                                    "bg-white/5 border-white/5 text-slate-500"
+                                        )}
+                                    >
+                                        {opt}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="pl-12 pt-4 border-t border-white/5 mt-4">
+                                <div className="flex gap-3 text-sm italic text-slate-400">
+                                    <HelpCircle size={18} className="text-brand-cyan shrink-0 print:hidden" />
+                                    <p className="print:text-black">{q.explanation}</p>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4 print:hidden">
+                    <button
+                        onClick={() => setPreviewTest(null)}
+                        className="flex-1 py-4 rounded-2xl bg-white/10 text-white font-black uppercase tracking-widest hover:bg-white/20 transition-all shadow-xl"
+                    >
+                        Volver al Historial
+                    </button>
+                    <button
+                        onClick={() => window.print()}
+                        className="flex-1 py-4 rounded-2xl bg-brand-cyan text-brand-dark font-black uppercase tracking-widest hover:scale-[1.02] transition-all shadow-xl shadow-brand-cyan/20"
+                    >
+                        Descargar en PDF
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -81,6 +165,19 @@ export default function HistoryView() {
                                         </div>
 
                                         <div className="flex items-center gap-2">
+                                            {test.examData && test.userAnswers && (
+                                                <>
+                                                    <button onClick={() => setPreviewTest(test)} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all">
+                                                        <Eye size={18} />
+                                                    </button>
+                                                    <button onClick={() => {
+                                                        setPreviewTest(test);
+                                                        setTimeout(() => window.print(), 500);
+                                                    }} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all">
+                                                        <Download size={18} />
+                                                    </button>
+                                                </>
+                                            )}
                                             <button onClick={() => deleteHistoryItem(test.id)} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all">
                                                 <Trash2 size={18} />
                                             </button>

@@ -123,30 +123,7 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                         </div>
                     </div>
 
-                    {/* Difficulty Selector */}
-                    <div className="space-y-4 shadow-lg p-1 rounded-2xl glass bg-black/20">
-                        <div className="flex justify-between p-1 bg-white/5 rounded-xl border border-white/5 relative">
-                            {['Fácil', 'Media', 'Difícil'].map((lvl) => (
-                                <button
-                                    key={lvl}
-                                    onClick={() => setDifficulty(lvl)}
-                                    className={cn(
-                                        "flex-1 py-2 text-sm font-bold rounded-lg transition-all z-10",
-                                        difficulty === lvl ? "text-white" : "text-slate-500 hover:text-white"
-                                    )}
-                                >
-                                    {lvl}
-                                </button>
-                            ))}
-                            <div
-                                className={cn(
-                                    "absolute top-1 bottom-1 w-[calc(33.33%-4px)] bg-brand-cyan/20 border border-brand-cyan/50 rounded-lg transition-transform duration-300 pointer-events-none",
-                                    difficulty === 'Fácil' ? "translate-x-0" :
-                                        difficulty === 'Media' ? "translate-x-[calc(100%+6px)]" : "translate-x-[calc(200%+12px)]"
-                                )}
-                            />
-                        </div>
-                    </div>
+                    {/* Removed difficulty from here */}
 
                     {/* Stats/Badges */}
                     <div className="grid grid-cols-1 gap-4">
@@ -158,6 +135,31 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                                 <span className="text-sm font-medium text-slate-300">Ratio de tiempo</span>
                             </div>
                             <span className="text-sm font-semibold text-white bg-brand-cyan/20 px-2 py-1 rounded">1 min / preg</span>
+                        </div>
+
+                        {/* Difficulty Selector */}
+                        <div className="shadow-lg p-1 rounded-2xl glass bg-black/20 my-2">
+                            <div className="flex justify-between p-1 bg-white/5 rounded-xl border border-white/5 relative">
+                                {['Fácil', 'Media', 'Difícil'].map((lvl) => (
+                                    <button
+                                        key={lvl}
+                                        onClick={() => setDifficulty(lvl)}
+                                        className={cn(
+                                            "flex-1 py-2 text-sm font-bold rounded-lg transition-all z-10",
+                                            difficulty === lvl ? "text-white" : "text-slate-500 hover:text-white"
+                                        )}
+                                    >
+                                        {lvl}
+                                    </button>
+                                ))}
+                                <div
+                                    className={cn(
+                                        "absolute top-1 bottom-1 w-[calc(33.33%-4px)] bg-brand-cyan/20 border border-brand-cyan/50 rounded-lg transition-transform duration-300 pointer-events-none",
+                                        difficulty === 'Fácil' ? "translate-x-0" :
+                                            difficulty === 'Media' ? "translate-x-[calc(100%+6px)]" : "translate-x-[calc(200%+12px)]"
+                                    )}
+                                />
+                            </div>
                         </div>
 
                         <div className="group flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 glass-hover">
