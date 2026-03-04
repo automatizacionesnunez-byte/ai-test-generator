@@ -19,7 +19,7 @@ interface ExamData {
     totalQuestions?: number;
 }
 
-export default function ExamView({ data, onBack }: { data: ExamData, onBack: () => void }) {
+export default function ExamView({ data, onBack, onRetake }: { data: ExamData, onBack: () => void, onRetake?: (failedQuestions: Question[]) => void }) {
     const [currentIdx, setCurrentIdx] = useState(0);
     const [answers, setAnswers] = useState<Record<number, number>>({});
     const [showResults, setShowResults] = useState(false);
@@ -88,9 +88,10 @@ export default function ExamView({ data, onBack }: { data: ExamData, onBack: () 
     if (showResults) {
         const score = calculateScore();
         const ratio = score / data.questions.length;
+        const failedQuestions = data.questions.filter((q, i) => answers[i] !== q.correctAnswer);
 
         return (
-            <div className="max-w-4xl mx-auto space-y-12 pb-20">
+            <div className="max-w-4xl mx-auto space-y-12 pb-20 print:space-y-6 print:pb-0">
                 <div className="text-center space-y-4">
                     <motion.div
                         initial={{ scale: 0.5, opacity: 0 }}
@@ -139,20 +140,36 @@ export default function ExamView({ data, onBack }: { data: ExamData, onBack: () 
 
                             <div className="pl-12 pt-4 border-t border-white/5 mt-4">
                                 <div className="flex gap-3 text-sm italic text-slate-400">
-                                    <HelpCircle size={18} className="text-brand-cyan shrink-0" />
-                                    <p>{q.explanation}</p>
+                                    <HelpCircle size={18} className="text-brand-cyan shrink-0 print:hidden" />
+                                    <p className="print:text-black">{q.explanation}</p>
                                 </div>
                             </div>
                         </div>
                     ))}
                 </div>
 
-                <button
-                    onClick={onBack}
-                    className="w-full py-4 rounded-2xl bg-brand-cyan text-brand-dark font-black uppercase tracking-widest hover:scale-[1.02] transition-all"
-                >
-                    Volver al Panel
-                </button>
+                <div className="flex flex-col sm:flex-row gap-4 print:hidden">
+                    <button
+                        onClick={onBack}
+                        className="flex-1 py-4 rounded-2xl bg-white/10 text-white font-black uppercase tracking-widest hover:bg-white/20 transition-all shadow-xl"
+                    >
+                        Volver al Panel
+                    </button>
+                    {onRetake && failedQuestions.length > 0 && (
+                        <button
+                            onClick={() => onRetake(failedQuestions)}
+                            className="flex-1 py-4 rounded-2xl bg-red-500/20 text-red-500 font-black uppercase tracking-widest hover:bg-red-500/30 transition-all shadow-xl border border-red-500/10"
+                        >
+                            Repasar Falladas ({failedQuestions.length})
+                        </button>
+                    )}
+                    <button
+                        onClick={() => window.print()}
+                        className="flex-1 py-4 rounded-2xl bg-brand-cyan text-brand-dark font-black uppercase tracking-widest hover:scale-[1.02] transition-all shadow-xl shadow-brand-cyan/20"
+                    >
+                        Descargar en PDF
+                    </button>
+                </div>
             </div>
         );
     }

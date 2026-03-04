@@ -18,7 +18,9 @@ export async function POST(req: Request) {
                     let history: any[] = [];
                     let isFirst = true;
                     let examTitle = "Test Generado";
-                    const chunkSize = 5;
+                    let chunkSize = 4;
+                    if (numQuestions <= 5) chunkSize = 2;
+                    else if (numQuestions <= 10) chunkSize = 3;
 
                     while (remaining > 0) {
                         const chunk = Math.min(chunkSize, remaining);
@@ -30,7 +32,7 @@ export async function POST(req: Request) {
       "question": "Pregunta...",
       "options": ["A", "B", "C", "D"],
       "correctAnswer": 0,
-      "explanation": "Explicación"
+      "explanation": "Explicación detallada y extensa de por qué esta es la respuesta correcta y por qué las demás son incorrectas. No te limites a decir 'el documento dice', explica el razonamiento y el contenido completo."
     }
   ]
 }`;

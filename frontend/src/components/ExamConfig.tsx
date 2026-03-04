@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 
 export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (data: any) => void }) {
     const [numQuestions, setNumQuestions] = useState(10);
+    const [difficulty, setDifficulty] = useState('Media');
     const [isLoading, setIsLoading] = useState(false);
 
     const handleGenerate = async () => {
@@ -15,7 +16,7 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
             const response = await fetch('/api/generate-test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ numQuestions, difficulty: 'Dificultad Media' }),
+                body: JSON.stringify({ numQuestions, difficulty }),
             });
 
             if (!response.body) throw new Error('No body in response');
@@ -51,8 +52,12 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                             examData.examTitle = parsed.examTitle || examData.examTitle;
                             examData.questions = [...examData.questions, ...(parsed.questions || [])];
 
-                            // Let the user start immediately when 5 questions arrive
-                            if (examData.questions.length >= 5 && !firstChunkRevealed) {
+                            let firstChunkThreshold = 4;
+                            if (numQuestions <= 5) firstChunkThreshold = 2;
+                            else if (numQuestions <= 10) firstChunkThreshold = 3;
+
+                            // Let the user start immediately when enough questions arrive
+                            if (examData.questions.length >= firstChunkThreshold && !firstChunkRevealed) {
                                 firstChunkRevealed = true;
                                 setIsLoading(false);
                                 if (onExamGenerated) onExamGenerated({ ...examData });
@@ -115,6 +120,31 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                             <span>5</span>
                             <span>25</span>
                             <span>50</span>
+                        </div>
+                    </div>
+
+                    {/* Difficulty Selector */}
+                    <div className="space-y-4 shadow-lg p-1 rounded-2xl glass bg-black/20">
+                        <div className="flex justify-between p-1 bg-white/5 rounded-xl border border-white/5 relative">
+                            {['Fácil', 'Media', 'Difícil'].map((lvl) => (
+                                <button
+                                    key={lvl}
+                                    onClick={() => setDifficulty(lvl)}
+                                    className={cn(
+                                        "flex-1 py-2 text-sm font-bold rounded-lg transition-all z-10",
+                                        difficulty === lvl ? "text-white" : "text-slate-500 hover:text-white"
+                                    )}
+                                >
+                                    {lvl}
+                                </button>
+                            ))}
+                            <div
+                                className={cn(
+                                    "absolute top-1 bottom-1 w-[calc(33.33%-4px)] bg-brand-cyan/20 border border-brand-cyan/50 rounded-lg transition-transform duration-300 pointer-events-none",
+                                    difficulty === 'Fácil' ? "translate-x-0" :
+                                        difficulty === 'Media' ? "translate-x-[calc(100%+6px)]" : "translate-x-[calc(200%+12px)]"
+                                )}
+                            />
                         </div>
                     </div>
 

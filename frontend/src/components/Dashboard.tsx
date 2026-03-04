@@ -70,7 +70,18 @@ export default function Dashboard() {
                 return <SettingsView />;
             case 'exam':
                 return activeExam ? (
-                    <ExamView data={activeExam} onBack={() => setCurrentView('dashboard')} />
+                    <ExamView
+                        key={`${activeExam.examTitle}-${activeExam.questions?.length}`}
+                        data={activeExam}
+                        onBack={() => setCurrentView('dashboard')}
+                        onRetake={(failedQuestions) => {
+                            setActiveExam({
+                                examTitle: `${activeExam.examTitle} (Repaso)`,
+                                questions: failedQuestions,
+                                totalQuestions: failedQuestions.length
+                            });
+                        }}
+                    />
                 ) : null;
             default:
                 return null;
