@@ -18,9 +18,9 @@ export async function POST(req: Request) {
                     let history: any[] = [];
                     let isFirst = true;
                     let examTitle = "Test Generado";
-                    let chunkSize = 4;
-                    if (numQuestions <= 5) chunkSize = 2;
-                    else if (numQuestions <= 10) chunkSize = 3;
+                    let chunkSize = 10;
+                    if (numQuestions <= 5) chunkSize = 5;
+                    else if (numQuestions <= 10) chunkSize = 10;
 
                     while (remaining > 0) {
                         const chunk = Math.min(chunkSize, remaining);

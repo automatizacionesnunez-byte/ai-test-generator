@@ -66,13 +66,20 @@ export default function Dashboard() {
             case 'files':
                 return <FilesView />;
             case 'history':
-                return <HistoryView />;
+                return <HistoryView onRetake={(failedQuestions, originalTitle) => {
+                    setActiveExam({
+                        examTitle: `${originalTitle} (Repaso Falladas)`,
+                        questions: failedQuestions,
+                        totalQuestions: failedQuestions.length
+                    });
+                    setCurrentView('exam');
+                }} />;
             case 'settings':
                 return <SettingsView />;
             case 'exam':
                 return activeExam ? (
                     <ExamView
-                        key={`${activeExam.examTitle}-${activeExam.questions?.length}`}
+                        key={activeExam.examTitle}
                         data={activeExam}
                         onBack={() => setCurrentView('dashboard')}
                         onRetake={(failedQuestions) => {
