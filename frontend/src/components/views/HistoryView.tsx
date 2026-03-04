@@ -5,7 +5,11 @@ import { History, Eye, Trash2, ArrowRightCircle, CheckCircle2, XCircle, Clock, B
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
-export default function HistoryView() {
+interface HistoryViewProps {
+    onRetake?: (failedQuestions: any[], title: string) => void;
+}
+
+export default function HistoryView({ onRetake }: HistoryViewProps) {
     const [history, setHistory] = React.useState<any[]>([]);
     const [previewTest, setPreviewTest] = React.useState<any>(null);
 
@@ -95,15 +99,26 @@ export default function HistoryView() {
                 <div className="flex flex-col sm:flex-row gap-4 print:hidden">
                     <button
                         onClick={() => setPreviewTest(null)}
-                        className="flex-1 py-4 rounded-2xl bg-white/10 text-white font-black uppercase tracking-widest hover:bg-white/20 transition-all shadow-xl"
+                        className="flex-1 py-4 lg:py-3 rounded-2xl bg-white/10 text-white font-black uppercase tracking-widest hover:bg-white/20 transition-all shadow-xl text-xs lg:text-sm"
                     >
-                        Volver al Historial
+                        Volver
                     </button>
+                    {onRetake && data.questions.filter((q: any, i: number) => answers[i] !== q.correctAnswer).length > 0 && (
+                        <button
+                            onClick={() => {
+                                const failed = data.questions.filter((q: any, i: number) => answers[i] !== q.correctAnswer);
+                                onRetake(failed, data.examTitle);
+                            }}
+                            className="flex-1 py-4 lg:py-3 rounded-2xl bg-indigo-500/20 text-indigo-400 font-black uppercase tracking-widest hover:bg-indigo-500/30 transition-all shadow-xl border border-indigo-500/20 text-xs lg:text-sm"
+                        >
+                            Rehacer Falladas ({data.questions.filter((q: any, i: number) => answers[i] !== q.correctAnswer).length})
+                        </button>
+                    )}
                     <button
                         onClick={() => window.print()}
-                        className="flex-1 py-4 rounded-2xl bg-brand-cyan text-brand-dark font-black uppercase tracking-widest hover:scale-[1.02] transition-all shadow-xl shadow-brand-cyan/20"
+                        className="flex-1 py-4 lg:py-3 rounded-2xl bg-brand-cyan text-brand-dark font-black uppercase tracking-widest hover:scale-[1.02] transition-all shadow-xl shadow-brand-cyan/20 text-xs lg:text-sm"
                     >
-                        Descargar en PDF
+                        PDF
                     </button>
                 </div>
             </div>
