@@ -98,10 +98,12 @@ export default function HistoryView({ onRetake }: HistoryViewProps) {
 
                 <div className="flex flex-col sm:flex-row gap-4 print:hidden">
                     <button
-                        onClick={() => setPreviewTest(null)}
+                        onClick={() => {
+                            setPreviewTest(null);
+                        }}
                         className="flex-1 py-4 lg:py-3 rounded-2xl bg-white/10 text-white font-black uppercase tracking-widest hover:bg-white/20 transition-all shadow-xl text-xs lg:text-sm"
                     >
-                        Volver
+                        Volver al Historial
                     </button>
                     {onRetake && data.questions.filter((q: any, i: number) => answers[i] !== q.correctAnswer).length > 0 && (
                         <button
