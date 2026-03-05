@@ -52,16 +52,25 @@ export default function FilesView() {
 
         try {
             const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
+
+            // 1. Unpin from workspace
             const response = await fetch(`/api/vps/workspace/${ALLM_WORKSPACE}/update-embeddings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ removes: [docpath] }),
+                body: JSON.stringify({ adds: [], removes: [docpath] }),
             });
 
             if (response.ok) {
+                // 2. Completely delete from AnythingLLM system
+                await fetch(`/api/vps/system/remove-document`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: docpath })
+                });
+
                 setFiles(prev => prev.filter(f => f.id !== id));
             } else {
-                alert("Hubo un problema al eliminar el archivo.");
+                alert("Hubo un problema al eliminar el archivo del workspace.");
             }
         } catch (e) {
             console.error("Error al eliminar", e);
