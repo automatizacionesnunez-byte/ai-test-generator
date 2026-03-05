@@ -56,27 +56,23 @@ export default function FilesView() {
         try {
             const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
 
-            // 1. Unpin from workspace
+            // AnythingLLM uses "deletes" (NOT "removes") to remove docs from workspace
             const response = await fetch(`/api/vps/workspace/${ALLM_WORKSPACE}/update-embeddings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ adds: [], removes: [docpath] }),
+                body: JSON.stringify({ adds: [], deletes: [docpath] }),
             });
 
             if (response.ok) {
-                // 2. Completely delete from AnythingLLM system
-                await fetch(`/api/vps/system/remove-document`, {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: docpath })
-                });
-
                 setFiles(prev => prev.filter(f => f.id !== id));
             } else {
+                const errData = await response.json().catch(() => ({}));
+                console.error("Delete failed:", errData);
                 alert("Hubo un problema al eliminar el archivo del workspace.");
             }
         } catch (e) {
             console.error("Error al eliminar", e);
+            alert("Error de red al eliminar el archivo.");
         }
     };
 
