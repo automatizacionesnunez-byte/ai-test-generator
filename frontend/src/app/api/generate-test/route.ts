@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 
+export const maxDuration = 120; // Allow up to 2 minutes for generation
+export const dynamic = 'force-dynamic';
+
 // Config
 const ALLM_URL = process.env.NEXT_PUBLIC_ANYTHINGLLM_URL;
 const ALLM_KEY = process.env.NEXT_PUBLIC_ANYTHINGLLM_KEY;
@@ -18,9 +21,11 @@ export async function POST(req: Request) {
                     let history: any[] = [];
                     let isFirst = true;
                     let examTitle = "Test Generado";
-                    let chunkSize = 10;
-                    if (numQuestions <= 5) chunkSize = 5;
-                    else if (numQuestions <= 10) chunkSize = 10;
+                    // Use smaller chunks when targeting a specific file (slower LLM response)
+                    const isTargeted = targetFile && targetFile !== 'all';
+                    let chunkSize = isTargeted ? 5 : 10;
+                    if (numQuestions <= 5) chunkSize = isTargeted ? 3 : 5;
+                    else if (numQuestions <= 10) chunkSize = isTargeted ? 5 : 10;
 
                     while (remaining > 0) {
                         const chunk = Math.min(chunkSize, remaining);
@@ -53,6 +58,7 @@ export async function POST(req: Request) {
 
                         if (!allmResponse.ok) {
                             const errTxt = await allmResponse.text();
+                            console.error(`AnythingLLM HTTP error: ${allmResponse.status}`, errTxt);
                             throw new Error(`Status HTTP: ${allmResponse.status} ${errTxt}`);
                         }
 

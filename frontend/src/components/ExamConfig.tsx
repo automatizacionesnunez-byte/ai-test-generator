@@ -50,6 +50,11 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                 body: JSON.stringify({ numQuestions, difficulty, targetFile }),
             });
 
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || `Error HTTP ${response.status}`);
+            }
+
             if (!response.body) throw new Error('No body in response');
 
             const reader = response.body.getReader();
@@ -98,6 +103,12 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                             }
                         } catch (e: any) {
                             console.error("SSE parse error", e);
+                            if (e.message && !e.message.includes('JSON')) {
+                                // This is a real error from the server, not just a parse glitch
+                                alert(`Error del servidor: ${e.message}`);
+                                setIsLoading(false);
+                                return;
+                            }
                         }
                     }
                 }
@@ -110,9 +121,15 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                 onExamGenerated({ ...examData });
             }
 
-        } catch (error) {
+            // If we got through the whole stream but got zero questions
+            if (examData.questions.length === 0) {
+                alert('La IA no generó preguntas. Intenta de nuevo o prueba con otro documento.');
+                setIsLoading(false);
+            }
+
+        } catch (error: any) {
             console.error('Error generating exam:', error);
-            alert('Error al generar el examen. Revisa la consola.');
+            alert(`Error al generar el examen: ${error.message || 'desconocido'}`);
             setIsLoading(false);
         }
     };
