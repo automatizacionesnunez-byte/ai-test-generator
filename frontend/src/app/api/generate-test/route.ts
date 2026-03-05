@@ -1,12 +1,82 @@
 import { NextResponse } from 'next/server';
 
-export const maxDuration = 120; // Allow up to 2 minutes for generation
+export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
 
 // Config
 const ALLM_URL = process.env.NEXT_PUBLIC_ANYTHINGLLM_URL;
 const ALLM_KEY = process.env.NEXT_PUBLIC_ANYTHINGLLM_KEY;
 const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE;
+
+// Helper: call AnythingLLM once for a batch of questions
+async function generateChunk(
+    chunkSize: number,
+    difficulty: string,
+    targetFile: string | null,
+    chunkIndex: number,
+    totalChunks: number
+): Promise<{ examTitle?: string; questions: any[] }> {
+
+    const topicHint = totalChunks > 1
+        ? `Este es el bloque ${chunkIndex + 1} de ${totalChunks}. Genera preguntas sobre DIFERENTES aspectos del temario que no se repitan con otros bloques. Enfócate en la parte ${chunkIndex + 1}/${totalChunks} del contenido.`
+        : '';
+
+    const fileHint = targetFile && targetFile !== 'all'
+        ? `Basándote ESTRICTAMENTE y ÚNICAMENTE en la información proveniente del documento llamado "${targetFile}",`
+        : `Basándote en el contenido de tus documentos,`;
+
+    const wantTitle = chunkIndex === 0;
+
+    const prompt = `Devuelve ESTRICTAMENTE y ÚNICAMENTE un objeto JSON válido. No incluyas absolutamente nada de texto extra. ${fileHint} genera exactamente ${chunkSize} preguntas de tipo test nivel ${difficulty}. ${topicHint}
+{
+  ${wantTitle ? '"examTitle": "Título basado en los documentos",\n  ' : ''}"questions": [
+    {
+      "question": "Pregunta...",
+      "options": ["A", "B", "C", "D"],
+      "correctAnswer": 0,
+      "explanation": "Explicación detallada y extensa de por qué esta es la respuesta correcta y por qué las demás son incorrectas."
+    }
+  ]
+}`;
+
+    const response = await fetch(`${ALLM_URL}/workspace/${ALLM_WORKSPACE}/chat`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${ALLM_KEY}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: prompt, mode: 'chat' }),
+    });
+
+    if (!response.ok) {
+        const errTxt = await response.text();
+        console.error(`AnythingLLM HTTP error: ${response.status}`, errTxt);
+        throw new Error(`HTTP ${response.status}: ${errTxt}`);
+    }
+
+    const data = await response.json();
+    const textResponse = data.textResponse || data.text;
+    if (!textResponse) throw new Error("Empty response from AnythingLLM");
+
+    // Parse JSON from response
+    let rawOutput = textResponse.trim();
+    const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (jsonMatch && jsonMatch[1]) {
+        rawOutput = jsonMatch[1].trim();
+    } else {
+        const firstBrace = rawOutput.indexOf('{');
+        const lastBrace = rawOutput.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+            rawOutput = rawOutput.substring(firstBrace, lastBrace + 1);
+        }
+    }
+
+    const parsed = JSON.parse(rawOutput);
+    return {
+        examTitle: parsed.examTitle,
+        questions: parsed.questions || [],
+    };
+}
 
 export async function POST(req: Request) {
     try {
@@ -16,99 +86,71 @@ export async function POST(req: Request) {
         const stream = new ReadableStream({
             async start(controller) {
                 try {
+                    // Split into parallel chunks of 5 questions max
+                    const CHUNK_SIZE = 5;
+                    const numChunks = Math.ceil(numQuestions / CHUNK_SIZE);
+                    const chunks: number[] = [];
                     let remaining = numQuestions;
-                    let currentId = 1;
-                    let history: any[] = [];
-                    let isFirst = true;
+                    for (let i = 0; i < numChunks; i++) {
+                        const size = Math.min(CHUNK_SIZE, remaining);
+                        chunks.push(size);
+                        remaining -= size;
+                    }
+
+                    console.log(`Generating ${numQuestions} questions in ${numChunks} parallel chunks: [${chunks.join(', ')}]`);
+
                     let examTitle = "Test Generado";
-                    // Use smaller chunks when targeting a specific file (slower LLM response)
-                    const isTargeted = targetFile && targetFile !== 'all';
-                    let chunkSize = isTargeted ? 5 : 10;
-                    if (numQuestions <= 5) chunkSize = isTargeted ? 3 : 5;
-                    else if (numQuestions <= 10) chunkSize = isTargeted ? 5 : 10;
+                    let currentId = 1;
 
-                    while (remaining > 0) {
-                        const chunk = Math.min(chunkSize, remaining);
-                        const isFirstText = isFirst ? "Incluye un examTitle basado en los documentos." : "No es necesario un examTitle.";
+                    // Fire all chunks in parallel
+                    const promises = chunks.map((chunkSize, idx) =>
+                        generateChunk(chunkSize, difficulty, targetFile, idx, numChunks)
+                            .then(result => ({ idx, result, error: null }))
+                            .catch(error => ({ idx, result: null, error }))
+                    );
 
-                        let basePrompt = targetFile && targetFile !== 'all'
-                            ? `Basándote ESTRICTAMENTE y ÚNICAMENTE en la información proveniente del documento llamado "${targetFile}", genera exactamente ${chunk} preguntas de tipo test nivel ${difficulty}. IMPORTANTE: Las preguntas deben ser DISTINTAS a las generadas anteriormente. ${isFirstText}`
-                            : `Basándote en el contenido de tus documentos, genera exactamente ${chunk} preguntas de tipo test nivel ${difficulty}. IMPORTANTE: Las preguntas deben ser DISTINTAS a las generadas anteriormente. ${isFirstText}`;
+                    // Stream results as each chunk completes (not waiting for all)
+                    const settled = await Promise.allSettled(
+                        promises.map(async (promise) => {
+                            const { idx, result, error } = await promise;
 
-                        const prompt = `Devuelve ESTRICTAMENTE y ÚNICAMENTE un objeto JSON válido. No incluyas absolutamente nada de texto extra. ${basePrompt}
-{
-  ${isFirst ? '"examTitle": "Título basado en los documentos",\n' : ''}  "questions": [
-    {
-      "question": "Pregunta...",
-      "options": ["A", "B", "C", "D"],
-      "correctAnswer": 0,
-      "explanation": "Explicación detallada y extensa de por qué esta es la respuesta correcta y por qué las demás son incorrectas. No te limites a decir 'el documento dice', explica el razonamiento y el contenido completo."
-    }
-  ]
-}`;
-
-                        const allmResponse = await fetch(`${ALLM_URL}/workspace/${ALLM_WORKSPACE}/chat`, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Bearer ${ALLM_KEY}`,
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ message: prompt, mode: 'chat', history }),
-                        });
-
-                        if (!allmResponse.ok) {
-                            const errTxt = await allmResponse.text();
-                            console.error(`AnythingLLM HTTP error: ${allmResponse.status}`, errTxt);
-                            throw new Error(`Status HTTP: ${allmResponse.status} ${errTxt}`);
-                        }
-
-                        const data = await allmResponse.json();
-                        const textResponse = data.textResponse || data.text;
-                        if (!textResponse) throw new Error("Repuesta vacia de AnythingLLM.");
-
-                        history.push({ role: 'user', content: prompt });
-                        history.push({ role: 'assistant', content: textResponse });
-
-                        let rawOutput = textResponse.trim();
-                        const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-                        if (jsonMatch && jsonMatch[1]) {
-                            rawOutput = jsonMatch[1].trim();
-                        } else {
-                            const firstBrace = rawOutput.indexOf('{');
-                            const lastBrace = rawOutput.lastIndexOf('}');
-                            if (firstBrace !== -1 && lastBrace !== -1) {
-                                rawOutput = rawOutput.substring(firstBrace, lastBrace + 1);
+                            if (error || !result) {
+                                console.error(`Chunk ${idx} failed:`, error?.message);
+                                return;
                             }
-                        }
 
-                        const parsed = JSON.parse(rawOutput);
-                        if (isFirst && parsed.examTitle) {
-                            examTitle = parsed.examTitle;
-                            isFirst = false;
-                        }
+                            if (idx === 0 && result.examTitle) {
+                                examTitle = result.examTitle;
+                            }
 
-                        const processedQuestions = (parsed.questions || []).map((q: any) => ({
-                            ...q,
-                            id: currentId++
-                        }));
+                            const processedQuestions = result.questions.map((q: any) => ({
+                                ...q,
+                                id: currentId++,
+                            }));
 
-                        const chunkData = {
-                            examTitle,
-                            questions: processedQuestions
-                        };
+                            const chunkData = {
+                                examTitle,
+                                questions: processedQuestions,
+                            };
 
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunkData)}\n\n`));
-                        remaining -= chunk;
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunkData)}\n\n`));
+                        })
+                    );
+
+                    // Check if any chunks succeeded
+                    const anySuccess = settled.some(s => s.status === 'fulfilled');
+                    if (!anySuccess) {
+                        controller.enqueue(encoder.encode(`data: {"error": "All parallel chunks failed"}\n\n`));
                     }
 
                     controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
                     controller.close();
-                } catch (allmErr: any) {
-                    console.error('AnythingLLM generation failed:', allmErr);
-                    controller.enqueue(encoder.encode(`data: {"error": "${allmErr.message}"}\n\n`));
+                } catch (err: any) {
+                    console.error('Generation failed:', err);
+                    controller.enqueue(encoder.encode(`data: {"error": "${err.message}"}\n\n`));
                     controller.close();
                 }
-            }
+            },
         });
 
         return new Response(stream, {
