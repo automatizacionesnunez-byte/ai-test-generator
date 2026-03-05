@@ -10,22 +10,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ path: s
         const path = resolvedParams.path.join('/');
         const url = `${ALLM_URL}/${path}`;
 
-        const contentType = req.headers.get('content-type') || "";
-        let body;
+        const contentType = req.headers.get('content-type');
 
-        if (contentType.includes('multipart/form-data')) {
-            body = await req.formData();
-        } else if (contentType.includes('application/json')) {
-            body = JSON.stringify(await req.json());
-        }
-
+        // Proxy the request using streaming for better performance and to handle large files/multipart
         const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${ALLM_KEY}`,
-                ...(contentType && !contentType.includes('multipart/form-data') ? { 'Content-Type': contentType } : {}),
+                ...(contentType ? { 'Content-Type': contentType } : {}),
             },
-            body,
+            body: req.body,
+            // @ts-ignore - duplex is required for streaming bodies in some environments
+            duplex: 'half'
         });
 
         const data = await response.json().catch(() => ({}));

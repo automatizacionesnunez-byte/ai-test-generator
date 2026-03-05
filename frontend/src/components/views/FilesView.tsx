@@ -58,9 +58,9 @@ export default function FilesView() {
 
             // Refresh the list
             await fetchFiles();
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            alert("Error al procesar el archivo. Revisa que el tamaño no exceda los límites.");
+            alert(`Error al procesar el archivo: ${err.message || 'Desconocido'}`);
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = "";
