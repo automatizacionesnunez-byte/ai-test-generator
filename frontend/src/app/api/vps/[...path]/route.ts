@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 export async function POST(req: Request, { params }: { params: Promise<{ path: string[] }> }) {
     try {
         const ALLM_URL = process.env.NEXT_PUBLIC_ANYTHINGLLM_URL;
@@ -48,6 +50,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ path: st
 
         const response = await fetch(url, {
             method: 'GET',
+            cache: 'no-store',
             headers: {
                 'Authorization': `Bearer ${ALLM_KEY}`,
             },

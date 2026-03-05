@@ -13,7 +13,10 @@ export default function FilesView() {
         async function fetchFiles() {
             try {
                 const allmWorkspace = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
-                const wsRes = await fetch(`/api/vps/workspace/${allmWorkspace}`);
+                const wsRes = await fetch(`/api/vps/workspace/${allmWorkspace}`, {
+                    cache: 'no-store',
+                    headers: { 'Pragma': 'no-cache' }
+                });
                 if (wsRes.ok) {
                     const wsData = await wsRes.json();
                     const docsArray = Array.isArray(wsData?.workspace)
