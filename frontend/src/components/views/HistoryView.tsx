@@ -150,17 +150,16 @@ export default function HistoryView({ onRetake }: HistoryViewProps) {
                                     initial={{ opacity: 0, scale: 0.98 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     transition={{ delay: idx * 0.05 }}
-                                    onClick={() => test.examData && test.userAnswers && setPreviewTest(test)}
                                     className={cn(
-                                        "group relative p-6 rounded-2xl glass glass-hover border border-white/5 flex items-center justify-between",
-                                        test.examData && test.userAnswers ? "cursor-pointer" : "cursor-default"
+                                        "group relative p-6 rounded-2xl glass glass-hover border border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6",
+                                        test.examData && test.userAnswers ? "cursor-default" : "cursor-default"
                                     )}
                                 >
-                                    <div className="flex items-center gap-6">
+                                    <div className="flex items-center gap-6 w-full sm:w-auto">
                                         <div className={`p-4 rounded-full ${statusBg} ${statusColor} group-hover:scale-110 transition-transform`}>
                                             {ratio >= 0.8 ? <CheckCircle2 size={24} /> : ratio >= 0.5 ? <Clock size={24} /> : <XCircle size={24} />}
                                         </div>
-                                        <div>
+                                        <div className="flex-1">
                                             <h3 className="text-lg font-bold text-white mb-1">{test.title}</h3>
                                             <div className="flex flex-wrap gap-4">
                                                 <div className="flex items-center gap-1 text-[10px] text-slate-500 uppercase font-black tracking-widest">
@@ -175,8 +174,8 @@ export default function HistoryView({ onRetake }: HistoryViewProps) {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-8">
-                                        <div className="text-right">
+                                    <div className="flex flex-wrap items-center justify-between sm:justify-end gap-6 w-full sm:w-auto">
+                                        <div className="text-left sm:text-right flex-1 sm:flex-none">
                                             <p className={`text-2xl font-black ${statusColor} text-glow-cyan`}>
                                                 {test.score} <span className="text-slate-600 font-bold text-sm">/ {test.total}</span>
                                             </p>
@@ -186,19 +185,30 @@ export default function HistoryView({ onRetake }: HistoryViewProps) {
                                         <div className="flex items-center gap-2">
                                             {test.examData && test.userAnswers && (
                                                 <>
-                                                    <button onClick={(e) => { e.stopPropagation(); setPreviewTest(test); }} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all">
-                                                        <Eye size={18} />
-                                                    </button>
-                                                    <button onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setPreviewTest(test);
-                                                        setTimeout(() => window.print(), 500);
-                                                    }} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all">
-                                                        <Download size={18} />
+                                                    {onRetake && test.examData.questions.filter((q: any, i: number) => test.userAnswers[i] !== q.correctAnswer).length > 0 && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const failed = test.examData.questions.filter((q: any, i: number) => test.userAnswers[i] !== q.correctAnswer);
+                                                                onRetake(failed, test.examData.examTitle);
+                                                            }}
+                                                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 font-bold hover:bg-indigo-500/20 transition-all text-sm border border-indigo-500/20"
+                                                            title="Rehacer preguntas falladas"
+                                                        >
+                                                            <span>Rehacer Falladas</span>
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); setPreviewTest(test); }}
+                                                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 text-slate-300 font-bold hover:bg-white/10 hover:text-white transition-all text-sm"
+                                                        title="Ver test completo y resultados"
+                                                    >
+                                                        <Eye size={16} />
+                                                        <span>Revisar</span>
                                                     </button>
                                                 </>
                                             )}
-                                            <button onClick={(e) => { e.stopPropagation(); deleteHistoryItem(test.id); }} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all">
+                                            <button onClick={(e) => { e.stopPropagation(); deleteHistoryItem(test.id); }} className="p-2.5 rounded-xl bg-white/5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all ml-2" title="Eliminar del historial">
                                                 <Trash2 size={18} />
                                             </button>
                                         </div>
