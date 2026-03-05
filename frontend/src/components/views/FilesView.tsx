@@ -8,42 +8,86 @@ import { getWorkspaceDocuments } from '@/lib/anything-llm';
 export default function FilesView() {
     const [files, setFiles] = React.useState<any[]>([]);
     const [isLoading, setIsLoading] = React.useState(true);
+    const [isUploading, setIsUploading] = React.useState(false);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const fetchFiles = async () => {
+        setIsLoading(true);
+        try {
+            const allmWorkspace = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
+            const wsRes = await fetch(`/api/vps/workspace/${allmWorkspace}`, {
+                cache: 'no-store',
+                headers: { 'Pragma': 'no-cache' }
+            });
+            if (wsRes.ok) {
+                const wsData = await wsRes.json();
+                const docsArray = Array.isArray(wsData?.workspace)
+                    ? wsData.workspace[0]?.documents
+                    : wsData?.workspace?.documents;
+
+                const workspaceDocs = (docsArray || []).map((doc: any) => ({
+                    id: doc.id || doc.docId,
+                    docpath: doc.docpath,
+                    name: doc.title || (doc.docpath ? doc.docpath.split('/').pop() : doc.docId || "Documento"),
+                    size: 'Documento',
+                    date: new Date(doc.createdAt || Date.now()).toLocaleDateString()
+                }));
+
+                const uniqueDocs = Array.from(new Map(workspaceDocs.map((item: any) => [item.docpath || item.id, item])).values());
+                setFiles(uniqueDocs as any);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     React.useEffect(() => {
-        async function fetchFiles() {
-            try {
-                const allmWorkspace = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
-                const wsRes = await fetch(`/api/vps/workspace/${allmWorkspace}`, {
-                    cache: 'no-store',
-                    headers: { 'Pragma': 'no-cache' }
-                });
-                if (wsRes.ok) {
-                    const wsData = await wsRes.json();
-                    const docsArray = Array.isArray(wsData?.workspace)
-                        ? wsData.workspace[0]?.documents
-                        : wsData?.workspace?.documents;
-
-                    const workspaceDocs = (docsArray || []).map((doc: any) => ({
-                        id: doc.id || doc.docId,
-                        docpath: doc.docpath,
-                        name: doc.title || (doc.docpath ? doc.docpath.split('/').pop() : doc.docId || "Documento"),
-                        size: 'Documento',
-                        date: new Date(doc.createdAt || Date.now()).toLocaleDateString()
-                    }));
-
-                    // Filter duplicates by docpath (AnythingLLM sometimes returns duplicated IDs for embedded chunks vs files)
-                    const uniqueDocs = Array.from(new Map(workspaceDocs.map((item: any) => [item.docpath || item.id, item])).values());
-
-                    setFiles(uniqueDocs as any);
-                }
-            } catch (err) {
-                console.error(err);
-            } finally {
-                setIsLoading(false);
-            }
-        }
         fetchFiles();
     }, []);
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // 1. Upload to system
+            const uploadRes = await fetch('/api/vps/document/upload', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!uploadRes.ok) throw new Error('Upload failed');
+            const uploadData = await uploadRes.json();
+            const docPath = uploadData.documents[0].location;
+
+            // 2. Link to workspace
+            const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
+            const linkRes = await fetch(`/api/vps/workspace/${ALLM_WORKSPACE}/update-embeddings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ adds: [docPath] }),
+            });
+
+            if (linkRes.ok) {
+                await fetchFiles();
+            } else {
+                alert("Error al vincular el archivo al workspace.");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Error al subir el archivo.");
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+        }
+    };
+
 
     const deleteFile = async (docpath: string, id: string) => {
         if (!docpath) {
@@ -64,6 +108,13 @@ export default function FilesView() {
             });
 
             if (response.ok) {
+                // 2. Also delete from system storage to prevent reappearing
+                await fetch(`/api/vps/system/remove-documents`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ names: [docpath] })
+                }).catch(e => console.error("System purge failed:", e));
+
                 setFiles(prev => prev.filter(f => f.id !== id));
             } else {
                 const errData = await response.json().catch(() => ({}));
@@ -83,10 +134,26 @@ export default function FilesView() {
                     <h2 className="text-4xl font-black tracking-tight text-white">Mis <span className="text-brand-cyan italic">Archivos</span></h2>
                     <p className="text-slate-400">Gestiona y consulta todos tus materiales de estudio subidos.</p>
                 </div>
-                <button className="flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-cyan text-brand-dark font-bold hover:scale-105 transition-transform glow-cyan shadow-lg active:scale-95">
-                    <Plus size={20} />
-                    <span>Subir Nuevo</span>
+                <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-cyan text-brand-dark font-bold hover:scale-105 transition-transform glow-cyan shadow-lg active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {isUploading ? (
+                        <div className="w-5 h-5 border-2 border-brand-dark/30 border-t-brand-dark rounded-full animate-spin" />
+                    ) : (
+                        <Plus size={20} />
+                    )}
+                    <span>{isUploading ? 'Subiendo...' : 'Subir Nuevo'}</span>
                 </button>
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                    accept=".pdf,.docx,.txt"
+                />
+
             </div>
 
             <div className="relative group max-w-md">
