@@ -150,7 +150,11 @@ export default function HistoryView({ onRetake }: HistoryViewProps) {
                                     initial={{ opacity: 0, scale: 0.98 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     transition={{ delay: idx * 0.05 }}
-                                    className="group relative p-6 rounded-2xl glass glass-hover border border-white/5 flex items-center justify-between"
+                                    onClick={() => test.examData && test.userAnswers && setPreviewTest(test)}
+                                    className={cn(
+                                        "group relative p-6 rounded-2xl glass glass-hover border border-white/5 flex items-center justify-between",
+                                        test.examData && test.userAnswers ? "cursor-pointer" : "cursor-default"
+                                    )}
                                 >
                                     <div className="flex items-center gap-6">
                                         <div className={`p-4 rounded-full ${statusBg} ${statusColor} group-hover:scale-110 transition-transform`}>
@@ -182,10 +186,11 @@ export default function HistoryView({ onRetake }: HistoryViewProps) {
                                         <div className="flex items-center gap-2">
                                             {test.examData && test.userAnswers && (
                                                 <>
-                                                    <button onClick={() => setPreviewTest(test)} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all">
+                                                    <button onClick={(e) => { e.stopPropagation(); setPreviewTest(test); }} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all">
                                                         <Eye size={18} />
                                                     </button>
-                                                    <button onClick={() => {
+                                                    <button onClick={(e) => {
+                                                        e.stopPropagation();
                                                         setPreviewTest(test);
                                                         setTimeout(() => window.print(), 500);
                                                     }} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all">
@@ -193,7 +198,7 @@ export default function HistoryView({ onRetake }: HistoryViewProps) {
                                                     </button>
                                                 </>
                                             )}
-                                            <button onClick={() => deleteHistoryItem(test.id)} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all">
+                                            <button onClick={(e) => { e.stopPropagation(); deleteHistoryItem(test.id); }} className="p-2 rounded-xl bg-white/5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-all">
                                                 <Trash2 size={18} />
                                             </button>
                                         </div>
