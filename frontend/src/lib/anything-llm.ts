@@ -24,7 +24,9 @@ export async function uploadDocumentToWorkspace(file: File) {
 
     // Now move/link it to the workspace
     // We get the workspace from env in the proxy too, but we need the slug here
-    const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE;
+    const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
+    console.log(`Linking document to workspace: ${ALLM_WORKSPACE}`);
+
     const moveResponse = await fetch(`/api/vps/workspace/${ALLM_WORKSPACE}/update-embeddings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -34,6 +36,8 @@ export async function uploadDocumentToWorkspace(file: File) {
     });
 
     if (!moveResponse.ok) {
+        const err = await moveResponse.json().catch(() => ({}));
+        console.error('Linking error:', err);
         throw new Error('Failed to link document to workspace');
     }
 
@@ -41,12 +45,12 @@ export async function uploadDocumentToWorkspace(file: File) {
 }
 
 export async function removeDocumentFromWorkspace(documentPath: string) {
-    const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE;
+    const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
     const response = await fetch(`/api/vps/workspace/${ALLM_WORKSPACE}/update-embeddings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            removes: [documentPath],
+            deletes: [documentPath],
         }),
     });
 
