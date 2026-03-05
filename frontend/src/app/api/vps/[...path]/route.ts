@@ -11,22 +11,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ path: s
         const url = `${ALLM_URL}/${path}`;
 
         const contentType = req.headers.get('content-type') || "";
-        let body;
 
-        if (contentType.includes('multipart/form-data')) {
-            body = await req.formData();
-        } else if (contentType.includes('application/json')) {
-            body = JSON.stringify(await req.json());
-        } else {
-            body = req.body;
-        }
+        // Read the entire body as a raw buffer to ensure 1:1 proxying
+        // This is safer than req.formData() on Vercel which might mangle boundaries
+        const body = await req.arrayBuffer();
 
         const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${ALLM_KEY}`,
-                // Let fetch set the boundary for multipart; set it explicitly for other types
-                ...(contentType && !contentType.includes('multipart/form-data') ? { 'Content-Type': contentType } : {}),
+                ...(contentType ? { 'Content-Type': contentType } : {}),
             },
             body,
         });

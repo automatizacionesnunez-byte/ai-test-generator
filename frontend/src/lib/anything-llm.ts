@@ -20,7 +20,15 @@ export async function uploadDocumentToWorkspace(file: File) {
     }
 
     const uploadResult = await response.json();
+    if (!uploadResult.documents || uploadResult.documents.length === 0) {
+        console.error('Upload success but no document info returned:', uploadResult);
+        throw new Error('Upload failed: No document info returned from server');
+    }
+
     const documentPath = uploadResult.documents[0].location;
+    if (!documentPath) {
+        throw new Error('Upload failed: Server did not return document location');
+    }
 
     // Now move/link it to the workspace
     // We get the workspace from env in the proxy too, but we need the slug here
