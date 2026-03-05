@@ -10,19 +10,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ path: s
         const path = resolvedParams.path.join('/');
         const url = `${ALLM_URL}/${path}`;
 
-        const contentType = req.headers.get('content-type') || "";
+        const contentType = req.headers.get('content-type');
 
-        // Read the entire body as a raw buffer to ensure 1:1 proxying
-        // This is safer than req.formData() on Vercel which might mangle boundaries
-        const body = await req.arrayBuffer();
-
+        // STREAMING PROXY:
+        // Using req.body (ReadableStream) directly. 
+        // This is crucial for files > 4.5MB as it avoids loading the whole file into Vercel's limited RAM.
         const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${ALLM_KEY}`,
                 ...(contentType ? { 'Content-Type': contentType } : {}),
             },
-            body,
+            body: req.body,
+            // @ts-ignore - Required for streaming bodies in native fetch
+            duplex: 'half'
         });
 
         const data = await response.json().catch(() => ({}));
