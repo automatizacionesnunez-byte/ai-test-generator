@@ -2,101 +2,80 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-export async function POST(req: Request, { params }: { params: Promise<{ path: string[] }> }) {
+// We allow a long duration for large file uploads and embeddings
+export const maxDuration = 120;
+
+async function proxyRequest(req: Request, paramsPromise: Promise<{ path: string[] }>) {
+    const ALLM_URL = process.env.NEXT_PUBLIC_ANYTHINGLLM_URL;
+    const ALLM_KEY = process.env.NEXT_PUBLIC_ANYTHINGLLM_KEY;
+    const { path: pathSegments } = await paramsPromise;
+    const path = pathSegments.join('/');
+    const url = `${ALLM_URL}/${path}`;
+
+    console.log(`[Proxy] ${req.method} ${url}`);
+
+    // Headers to forward
+    const headers = new Headers();
+    headers.set('Authorization', `Bearer ${ALLM_KEY}`);
+
+    // Copy headers from request that we want to keep
+    const headersToCopy = ['content-type', 'accept', 'range'];
+    headersToCopy.forEach(h => {
+        const val = req.headers.get(h);
+        if (val) headers.set(h, val);
+    });
+
     try {
-        const ALLM_URL = process.env.NEXT_PUBLIC_ANYTHINGLLM_URL;
-        const ALLM_KEY = process.env.NEXT_PUBLIC_ANYTHINGLLM_KEY;
-        const resolvedParams = await params;
-        const path = resolvedParams.path.join('/');
-        const url = `${ALLM_URL}/${path}`;
-
-        const contentType = req.headers.get('content-type');
-
-        // STREAMING PROXY:
-        // Using req.body (ReadableStream) directly. 
-        // This is crucial for files > 4.5MB as it avoids loading the whole file into Vercel's limited RAM.
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${ALLM_KEY}`,
-                ...(contentType ? { 'Content-Type': contentType } : {}),
-            },
-            body: req.body,
-            // @ts-ignore - Required for streaming bodies in native fetch
+        const fetchOptions: RequestInit = {
+            method: req.method,
+            headers: headers,
+            // @ts-ignore
             duplex: 'half'
-        });
+        };
 
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            return NextResponse.json(data, { status: response.status });
+        // Only add body if it's not a GET/HEAD request
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+            fetchOptions.body = req.body;
         }
 
-        return NextResponse.json(data);
+        const response = await fetch(url, fetchOptions);
+
+        // Handle different response types
+        const contentType = response.headers.get('content-type');
+
+        if (contentType?.includes('application/json')) {
+            const data = await response.json();
+            return NextResponse.json(data, { status: response.status });
+        } else {
+            const data = await response.arrayBuffer();
+            return new Response(data, {
+                status: response.status,
+                headers: {
+                    'Content-Type': contentType || 'application/octet-stream'
+                }
+            });
+        }
     } catch (error: any) {
-        console.error('VPS Proxy Error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        console.error(`[Proxy Error] ${req.method} ${url}:`, error);
+        return NextResponse.json({
+            error: 'VPS Communication Error',
+            details: error.message
+        }, { status: 500 });
     }
+}
+
+export async function POST(req: Request, { params }: { params: Promise<{ path: string[] }> }) {
+    return proxyRequest(req, params);
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ path: string[] }> }) {
-    try {
-        const ALLM_URL = process.env.NEXT_PUBLIC_ANYTHINGLLM_URL;
-        const ALLM_KEY = process.env.NEXT_PUBLIC_ANYTHINGLLM_KEY;
-        const resolvedParams = await params;
-        const path = resolvedParams.path.join('/');
-        const url = `${ALLM_URL}/${path}`;
-
-        const response = await fetch(url, {
-            method: 'GET',
-            cache: 'no-store',
-            headers: {
-                'Authorization': `Bearer ${ALLM_KEY}`,
-            },
-        });
-
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            return NextResponse.json(data, { status: response.status });
-        }
-
-        return NextResponse.json(data);
-    } catch (error: any) {
-        console.error('VPS Proxy Error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    return proxyRequest(req, params);
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ path: string[] }> }) {
-    try {
-        const ALLM_URL = process.env.NEXT_PUBLIC_ANYTHINGLLM_URL;
-        const ALLM_KEY = process.env.NEXT_PUBLIC_ANYTHINGLLM_KEY;
-        const resolvedParams = await params;
-        const path = resolvedParams.path.join('/');
-        const url = `${ALLM_URL}/${path}`;
+    return proxyRequest(req, params);
+}
 
-        const contentType = req.headers.get('content-type') || "";
-        let body;
-        if (contentType.includes('application/json')) {
-            body = JSON.stringify(await req.json());
-        }
-
-        const response = await fetch(url, {
-            method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${ALLM_KEY}`,
-                ...(contentType ? { 'Content-Type': contentType } : {}),
-            },
-            body,
-        });
-
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            return NextResponse.json(data, { status: response.status });
-        }
-
-        return NextResponse.json(data);
-    } catch (error: any) {
-        console.error('VPS Proxy Error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+export async function PUT(req: Request, { params }: { params: Promise<{ path: string[] }> }) {
+    return proxyRequest(req, params);
 }
