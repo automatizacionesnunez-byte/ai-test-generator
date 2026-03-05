@@ -7,7 +7,7 @@ const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE;
 
 export async function POST(req: Request) {
     try {
-        const { numQuestions, difficulty } = await req.json();
+        const { numQuestions, difficulty, targetFile } = await req.json();
 
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
@@ -25,7 +25,12 @@ export async function POST(req: Request) {
                     while (remaining > 0) {
                         const chunk = Math.min(chunkSize, remaining);
                         const isFirstText = isFirst ? "Incluye un examTitle basado en los documentos." : "No es necesario un examTitle.";
-                        const prompt = `Devuelve ESTRICTAMENTE y ÚNICAMENTE un objeto JSON válido. No incluyas absolutamente nada de texto extra. Basándote en el contenido de tus documentos, genera exactamente ${chunk} preguntas de tipo test nivel ${difficulty}. IMPORTANTE: Las preguntas deben ser DISTINTAS a las generadas anteriormente. ${isFirstText}
+
+                        let basePrompt = targetFile && targetFile !== 'all'
+                            ? `Basándote ESTRICTAMENTE y ÚNICAMENTE en la información proveniente del documento llamado "${targetFile}", genera exactamente ${chunk} preguntas de tipo test nivel ${difficulty}. IMPORTANTE: Las preguntas deben ser DISTINTAS a las generadas anteriormente. ${isFirstText}`
+                            : `Basándote en el contenido de tus documentos, genera exactamente ${chunk} preguntas de tipo test nivel ${difficulty}. IMPORTANTE: Las preguntas deben ser DISTINTAS a las generadas anteriormente. ${isFirstText}`;
+
+                        const prompt = `Devuelve ESTRICTAMENTE y ÚNICAMENTE un objeto JSON válido. No incluyas absolutamente nada de texto extra. ${basePrompt}
 {
   ${isFirst ? '"examTitle": "Título basado en los documentos",\n' : ''}  "questions": [
     {

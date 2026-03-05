@@ -9,6 +9,37 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
     const [numQuestions, setNumQuestions] = useState(10);
     const [difficulty, setDifficulty] = useState('Media');
     const [isLoading, setIsLoading] = useState(false);
+    const [files, setFiles] = useState<any[]>([]);
+    const [targetFile, setTargetFile] = useState('all');
+
+    React.useEffect(() => {
+        async function fetchFiles() {
+            try {
+                const allmWorkspace = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
+                const wsRes = await fetch(`/api/vps/workspace/${allmWorkspace}`);
+                if (wsRes.ok) {
+                    const wsData = await wsRes.json();
+                    const docsArray = Array.isArray(wsData?.workspace)
+                        ? wsData.workspace[0]?.documents
+                        : wsData?.workspace?.documents;
+
+                    const workspaceDocs = (docsArray || []).map((doc: any) => ({
+                        id: doc.id || doc.docId,
+                        docpath: doc.docpath,
+                        name: doc.title || (doc.docpath ? doc.docpath.split('/').pop() : doc.docId || "Documento"),
+                        size: 'Documento',
+                        date: new Date(doc.createdAt || Date.now()).toLocaleDateString()
+                    }));
+
+                    const uniqueDocs = Array.from(new Map(workspaceDocs.map((item: any) => [item.docpath || item.id, item])).values());
+                    setFiles(uniqueDocs as any);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        fetchFiles();
+    }, []);
 
     const handleGenerate = async () => {
         setIsLoading(true);
@@ -16,7 +47,7 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
             const response = await fetch('/api/generate-test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ numQuestions, difficulty }),
+                body: JSON.stringify({ numQuestions, difficulty, targetFile }),
             });
 
             if (!response.body) throw new Error('No body in response');
@@ -135,6 +166,20 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                                 <span className="text-sm font-medium text-slate-300">Ratio de tiempo</span>
                             </div>
                             <span className="text-sm font-semibold text-white bg-brand-cyan/20 px-2 py-1 rounded">1 min / preg</span>
+                        </div>
+
+                        <div className="group flex flex-col gap-2 p-4 rounded-xl bg-white/5 border border-white/5 glass-hover">
+                            <span className="text-sm font-medium text-slate-300">Fuente de información</span>
+                            <select
+                                value={targetFile}
+                                onChange={(e) => setTargetFile(e.target.value)}
+                                className="w-full bg-brand-dark border border-white/10 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-brand-cyan/50"
+                            >
+                                <option value="all">Aleatorio (Todo el temario)</option>
+                                {files.map(f => (
+                                    <option key={f.id} value={f.name}>{f.name}</option>
+                                ))}
+                            </select>
                         </div>
 
                         {/* Difficulty Selector */}
