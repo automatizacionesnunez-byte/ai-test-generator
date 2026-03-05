@@ -3,7 +3,7 @@
 import React from 'react';
 import { FileText, Eye, Trash2, Download, Plus, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getWorkspaceDocuments } from '@/lib/anything-llm';
+import { uploadDocumentToWorkspace } from '@/lib/anything-llm';
 
 export default function FilesView() {
     const [files, setFiles] = React.useState<any[]>([]);
@@ -53,35 +53,14 @@ export default function FilesView() {
 
         setIsUploading(true);
         try {
-            const formData = new FormData();
-            formData.append('file', file);
+            // Use the centralized library function that we know works and handles embedding
+            await uploadDocumentToWorkspace(file);
 
-            // 1. Upload to system
-            const uploadRes = await fetch('/api/vps/document/upload', {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!uploadRes.ok) throw new Error('Upload failed');
-            const uploadData = await uploadRes.json();
-            const docPath = uploadData.documents[0].location;
-
-            // 2. Link to workspace
-            const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
-            const linkRes = await fetch(`/api/vps/workspace/${ALLM_WORKSPACE}/update-embeddings`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ adds: [docPath] }),
-            });
-
-            if (linkRes.ok) {
-                await fetchFiles();
-            } else {
-                alert("Error al vincular el archivo al workspace.");
-            }
+            // Refresh the list
+            await fetchFiles();
         } catch (err) {
             console.error(err);
-            alert("Error al subir el archivo.");
+            alert("Error al procesar el archivo. Revisa que el tamaño no exceda los límites.");
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = "";
