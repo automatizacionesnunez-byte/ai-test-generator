@@ -48,19 +48,29 @@ export default function FilesView() {
     }, []);
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+        const selectedFiles = e.target.files;
+        if (!selectedFiles || selectedFiles.length === 0) return;
 
         setIsUploading(true);
-        try {
-            // Use the centralized library function that we know works and handles embedding
-            await uploadDocumentToWorkspace(file);
+        const filesArray = Array.from(selectedFiles);
 
-            // Refresh the list
+        try {
+            // Process files sequentially as requested (queue system)
+            for (const file of filesArray) {
+                console.log(`Subiendo: ${file.name}`);
+                try {
+                    await uploadDocumentToWorkspace(file);
+                } catch (err: any) {
+                    console.error(`Error subiendo ${file.name}:`, err);
+                    // We continue with the next file even if one fails
+                }
+            }
+
+            // Refresh the list once after all attempts
             await fetchFiles();
         } catch (err: any) {
             console.error(err);
-            alert(`Error al procesar el archivo: ${err.message || 'Desconocido'}`);
+            alert(`Error al procesar los archivos: ${err.message || 'Desconocido'}`);
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = "";
@@ -131,6 +141,7 @@ export default function FilesView() {
                     className="hidden"
                     onChange={handleFileUpload}
                     accept=".pdf,.docx,.txt"
+                    multiple
                 />
 
             </div>
