@@ -27,14 +27,16 @@ async function generateChunk(
 
     const wantTitle = chunkIndex === 0;
 
-    const prompt = `Devuelve ESTRICTAMENTE y ÚNICAMENTE un objeto JSON válido. No incluyas absolutamente nada de texto extra. ${fileHint} genera exactamente ${chunkSize} preguntas de tipo test nivel ${difficulty}. ${topicHint}
+    const prompt = `Devuelve ESTRICTAMENTE y ÚNICAMENTE un objeto JSON válido. NO incluyas explicaciones fuera del JSON, NO incluyas bloques de código markdown, solo el objeto JSON puro. ${fileHint} genera exactamente ${chunkSize} preguntas de tipo test nivel ${difficulty}. ${topicHint}
+ATENCIÓN: Si por algún motivo no encuentras el documento proporcionado o no tienes suficiente información, debes devolver obligatoriamente un JSON válido con la lista "questions" vacía. NO pidas disculpas ni des explicaciones en texto normal. Ejemplo: { "examTitle": "Sin información", "questions": [] }
+
 {
-  ${wantTitle ? '"examTitle": "Título basado en los documentos",\n  ' : ''}"questions": [
+  ${wantTitle ? '"examTitle": "Título del Examen",\n  ' : ''}"questions": [
     {
-      "question": "Pregunta...",
-      "options": ["A", "B", "C", "D"],
+      "question": "Texto de la pregunta",
+      "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
       "correctAnswer": 0,
-      "explanation": "Explicación detallada y extensa de por qué esta es la respuesta correcta y por qué las demás son incorrectas."
+      "explanation": "Explicación detallada..."
     }
   ]
 }`;
@@ -55,27 +57,34 @@ async function generateChunk(
     }
 
     const data = await response.json();
-    const textResponse = data.textResponse || data.text;
-    if (!textResponse) throw new Error("Empty response from AnythingLLM");
+    const textResponse = data.textResponse || data.text || "";
+    if (!textResponse) throw new Error("La IA no devolvió respuesta de texto.");
 
     // Parse JSON from response
     let rawOutput = textResponse.trim();
-    const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    if (jsonMatch && jsonMatch[1]) {
-        rawOutput = jsonMatch[1].trim();
-    } else {
-        const firstBrace = rawOutput.indexOf('{');
-        const lastBrace = rawOutput.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1) {
-            rawOutput = rawOutput.substring(firstBrace, lastBrace + 1);
-        }
+
+    // Clean potential markdown or prefix/suffix text
+    const jsonMatch = rawOutput.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        rawOutput = jsonMatch[0];
     }
 
-    const parsed = JSON.parse(rawOutput);
-    return {
-        examTitle: parsed.examTitle,
-        questions: parsed.questions || [],
-    };
+    // Limpia caracteres de control invisibles que la IA pueda meter por error
+    rawOutput = rawOutput.replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
+
+    try {
+        const parsed = JSON.parse(rawOutput);
+        return {
+            examTitle: parsed.examTitle,
+            questions: Array.isArray(parsed.questions) ? parsed.questions : [],
+        };
+    } catch (e) {
+        console.error("Failed to parse AI response as JSON:", textResponse);
+        if (textResponse.toLowerCase().includes("lo siento") || textResponse.toLowerCase().includes("no puedo") || textResponse.toLowerCase().includes("no encuentro")) {
+            throw new Error("La IA no encontró suficiente información en el documento para generar las preguntas. Puedes probar con todo el temario (Aleatorio).");
+        }
+        throw new Error("La IA de AnythingLLM devolvió un formato inválido que no se pudo leer. Intenta de nuevo.");
+    }
 }
 
 export async function POST(req: Request) {
@@ -102,24 +111,16 @@ export async function POST(req: Request) {
                     let examTitle = "Test Generado";
                     let currentId = 1;
 
-                    // Fire all chunks in parallel
-                    const promises = chunks.map((chunkSize, idx) =>
-                        generateChunk(chunkSize, difficulty, targetFile, idx, numChunks)
-                            .then(result => ({ idx, result, error: null }))
-                            .catch(error => ({ idx, result: null, error }))
-                    );
+                    let anySuccess = false;
 
-                    // Stream results as each chunk completes (not waiting for all)
-                    const settled = await Promise.allSettled(
-                        promises.map(async (promise) => {
-                            const { idx, result, error } = await promise;
+                    // Process chunks sequentially instead of parallel to avoid overloading VPS
+                    for (let i = 0; i < chunks.length; i++) {
+                        const chunkSize = chunks[i];
+                        try {
+                            console.log(`Processing chunk ${i + 1}/${chunks.length} (${chunkSize} questions)...`);
+                            const result = await generateChunk(chunkSize, difficulty, targetFile, i, numChunks);
 
-                            if (error || !result) {
-                                console.error(`Chunk ${idx} failed:`, error?.message);
-                                return;
-                            }
-
-                            if (idx === 0 && result.examTitle) {
+                            if (result.examTitle && i === 0) {
                                 examTitle = result.examTitle;
                             }
 
@@ -134,13 +135,15 @@ export async function POST(req: Request) {
                             };
 
                             controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunkData)}\n\n`));
-                        })
-                    );
+                            anySuccess = true;
+                        } catch (error: any) {
+                            console.error(`Chunk ${i} failed:`, error?.message);
+                            if (i === 0) throw error;
+                        }
+                    }
 
-                    // Check if any chunks succeeded
-                    const anySuccess = settled.some(s => s.status === 'fulfilled');
                     if (!anySuccess) {
-                        controller.enqueue(encoder.encode(`data: {"error": "All parallel chunks failed"}\n\n`));
+                        controller.enqueue(encoder.encode(`data: {"error": "All chunks failed"}\n\n`));
                     }
 
                     controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
