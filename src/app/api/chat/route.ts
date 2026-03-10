@@ -10,6 +10,10 @@ export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
     try {
+        if (!ALLM_URL || !ALLM_KEY) {
+            throw new Error("Missing AnythingLLM credentials in environment variables.");
+        }
+
         const { message, history } = await req.json();
 
         // Intento 1: AnythingLLM (para contexto de documentos)

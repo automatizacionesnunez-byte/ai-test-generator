@@ -93,6 +93,10 @@ No añadas ningún texto antes ni después del JSON.`;
 
 export async function POST(req: Request) {
     try {
+        if (!ALLM_URL || !ALLM_KEY) {
+            throw new Error("Missing AnythingLLM credentials in environment variables.");
+        }
+
         const { numQuestions, difficulty, targetFile } = await req.json();
 
         const encoder = new TextEncoder();
