@@ -17,27 +17,37 @@ async function generateChunk(
     totalChunks: number
 ): Promise<{ examTitle?: string; questions: any[] }> {
 
+    const fileContext = targetFile && targetFile !== 'all'
+        ? `CONTENIDO: ${targetFile}`
+        : `TEMARIO GENERAL`;
+
     const topicHint = totalChunks > 1
-        ? `Este es el bloque ${chunkIndex + 1} de ${totalChunks}. Genera preguntas sobre DIFERENTES aspectos del temario que no se repitan con otros bloques. Enfócate en la parte ${chunkIndex + 1}/${totalChunks} del contenido.`
+        ? `Bloque ${chunkIndex + 1}/${totalChunks}. Cubre temas de la sección ${chunkIndex + 1} del documento sin repetir preguntas anteriores.`
         : '';
 
-    const fileHint = targetFile && targetFile !== 'all'
-        ? `Basándote ESTRICTAMENTE y ÚNICAMENTE en la información proveniente del documento llamado "${targetFile}",`
-        : `Basándote en el contenido de tus documentos,`;
+    // Put the most important search terms at the VERY BEGINNING for better RAG
+    const prompt = `INSTRUCCIÓN PARA EXAMEN:
+${fileContext}
+${topicHint}
+Nivel: ${difficulty}
+Cantidad: ${chunkSize} preguntas.
 
-    const wantTitle = chunkIndex === 0;
+Genera un examen tipo test en ESPAÑOL. Cada pregunta debe tener 4 opciones y una sola respuesta correcta (indice 0-3). Incluye una explicación detallada.
 
-    const prompt = `Devuelve ESTRICTAMENTE y ÚNICAMENTE un objeto JSON válido. No incluyas absolutamente nada de texto extra. ${fileHint} genera exactamente ${chunkSize} preguntas de tipo test nivel ${difficulty}. ${topicHint}
+Devuelve EXCLUSIVAMENTE un objeto JSON con este formato:
 {
-  ${wantTitle ? '"examTitle": "Título basado en los documentos",\n  ' : ''}"questions": [
+  ${chunkIndex === 0 ? '"examTitle": "Título del tema",' : ''}
+  "questions": [
     {
-      "question": "Pregunta...",
-      "options": ["A", "B", "C", "D"],
+      "question": "...",
+      "options": ["...", "...", "...", "..."],
       "correctAnswer": 0,
-      "explanation": "Explicación detallada y extensa de por qué esta es la respuesta correcta y por qué las demás son incorrectas."
+      "explanation": "..."
     }
   ]
-}`;
+}
+
+No añadas ningún texto antes ni después del JSON.`;
 
     const response = await fetch(`${ALLM_URL}/workspace/${ALLM_WORKSPACE}/chat`, {
         method: 'POST',
@@ -45,37 +55,40 @@ async function generateChunk(
             'Authorization': `Bearer ${ALLM_KEY}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: prompt, mode: 'chat' }),
+        body: JSON.stringify({
+            message: prompt,
+            mode: targetFile && targetFile !== 'all' ? 'query' : 'chat',
+        }),
     });
 
     if (!response.ok) {
         const errTxt = await response.text();
         console.error(`AnythingLLM HTTP error: ${response.status}`, errTxt);
-        throw new Error(`HTTP ${response.status}: ${errTxt}`);
+        throw new Error(`Error en la IA (${response.status})`);
     }
 
     const data = await response.json();
     const textResponse = data.textResponse || data.text;
-    if (!textResponse) throw new Error("Empty response from AnythingLLM");
+    if (!textResponse) throw new Error("La IA no devolvió contenido");
 
     // Parse JSON from response
     let rawOutput = textResponse.trim();
-    const jsonMatch = rawOutput.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    if (jsonMatch && jsonMatch[1]) {
-        rawOutput = jsonMatch[1].trim();
-    } else {
-        const firstBrace = rawOutput.indexOf('{');
-        const lastBrace = rawOutput.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1) {
-            rawOutput = rawOutput.substring(firstBrace, lastBrace + 1);
-        }
+    // More robust JSON cleaning
+    const jsonMatch = rawOutput.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        rawOutput = jsonMatch[0];
     }
 
-    const parsed = JSON.parse(rawOutput);
-    return {
-        examTitle: parsed.examTitle,
-        questions: parsed.questions || [],
-    };
+    try {
+        const parsed = JSON.parse(rawOutput);
+        return {
+            examTitle: parsed.examTitle,
+            questions: parsed.questions || [],
+        };
+    } catch (e) {
+        console.error("Failed to parse JSON for chunk", chunkIndex, rawOutput);
+        throw new Error("Formato de respuesta inválido");
+    }
 }
 
 export async function POST(req: Request) {
@@ -86,63 +99,60 @@ export async function POST(req: Request) {
         const stream = new ReadableStream({
             async start(controller) {
                 try {
-                    // Split into parallel chunks of 5 questions max
+                    // Split into chunks of 5 questions max
                     const CHUNK_SIZE = 5;
                     const numChunks = Math.ceil(numQuestions / CHUNK_SIZE);
-                    const chunks: number[] = [];
+                    const chunkSizes: number[] = [];
                     let remaining = numQuestions;
                     for (let i = 0; i < numChunks; i++) {
                         const size = Math.min(CHUNK_SIZE, remaining);
-                        chunks.push(size);
+                        chunkSizes.push(size);
                         remaining -= size;
                     }
 
-                    console.log(`Generating ${numQuestions} questions in ${numChunks} parallel chunks: [${chunks.join(', ')}]`);
+                    console.log(`Generating ${numQuestions} questions in ${numChunks} chunks: [${chunkSizes.join(', ')}]`);
 
                     let examTitle = "Test Generado";
                     let currentId = 1;
 
-                    // Fire all chunks in parallel
-                    const promises = chunks.map((chunkSize, idx) =>
-                        generateChunk(chunkSize, difficulty, targetFile, idx, numChunks)
-                            .then(result => ({ idx, result, error: null }))
-                            .catch(error => ({ idx, result: null, error }))
-                    );
+                    // Execute chunks in batches of 2 to not overload small VPS
+                    const CONCURRENCY = 2;
+                    for (let i = 0; i < chunkSizes.length; i += CONCURRENCY) {
+                        const batch = chunkSizes.slice(i, i + CONCURRENCY);
+                        const batchPromises = batch.map((size, bIdx) => {
+                            const actualIdx = i + bIdx;
+                            return generateChunk(size, difficulty, targetFile, actualIdx, numChunks)
+                                .then(res => ({ ok: true, res }))
+                                .catch(err => ({ ok: false, err }));
+                        });
 
-                    // Stream results as each chunk completes (not waiting for all)
-                    const settled = await Promise.allSettled(
-                        promises.map(async (promise) => {
-                            const { idx, result, error } = await promise;
+                        const results = await Promise.all(batchPromises);
 
-                            if (error || !result) {
-                                console.error(`Chunk ${idx} failed:`, error?.message);
-                                return;
+                        for (const result of results) {
+                            if (result.ok) {
+                                const data = (result as any).res;
+                                if (data.examTitle && i === 0) {
+                                    examTitle = data.examTitle;
+                                }
+
+                                const processedQuestions = data.questions.map((q: any) => ({
+                                    ...q,
+                                    id: currentId++,
+                                }));
+
+                                if (processedQuestions.length > 0) {
+                                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                                        examTitle,
+                                        questions: processedQuestions,
+                                    })}\n\n`));
+                                }
+                            } else {
+                                console.error(`Batch item failed:`, (result as any).err);
                             }
-
-                            if (idx === 0 && result.examTitle) {
-                                examTitle = result.examTitle;
-                            }
-
-                            const processedQuestions = result.questions.map((q: any) => ({
-                                ...q,
-                                id: currentId++,
-                            }));
-
-                            const chunkData = {
-                                examTitle,
-                                questions: processedQuestions,
-                            };
-
-                            controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunkData)}\n\n`));
-                        })
-                    );
-
-                    // Check if any chunks succeeded
-                    const anySuccess = settled.some(s => s.status === 'fulfilled');
-                    if (!anySuccess) {
-                        controller.enqueue(encoder.encode(`data: {"error": "All parallel chunks failed"}\n\n`));
+                        }
                     }
 
+                    // Done
                     controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
                     controller.close();
                 } catch (err: any) {
