@@ -30,15 +30,16 @@ function extractJSON(text: string) {
 async function generateChunk(
     chunkSize: number,
     difficulty: string,
-    targetFile: string | null,
+    targetFileName: string | null,
     chunkIndex: number,
-    totalChunks: number
+    totalChunks: number,
+    tempWorkspaceSlug: string | null = null
 ): Promise<{ examTitle?: string; questions: any[]; error?: string }> {
 
     console.log(`[Generate API] Starting chunk ${chunkIndex + 1}/${totalChunks} (size: ${chunkSize})`);
 
-    const fileContext = targetFile && targetFile !== 'all'
-        ? `IMPORTANTE: Basándote EXCLUSIVAMENTE en el archivo o temática "${targetFile}". No uses información externa. Si no encuentras información suficiente, usa tus conocimientos sobre este tema específico.`
+    const fileContext = targetFileName && targetFileName !== 'all'
+        ? `IMPORTANTE: Basándote EXCLUSIVAMENTE en el archivo o temática "${targetFileName}". No uses información externa. Si no encuentras información suficiente, usa tus conocimientos sobre este tema específico.`
         : `Basándote en todo el temario disponible en tus documentos.`;
 
     const prompt = `Actúa como un experto preparador de oposiciones. Genera un examen tipo test en ESPAÑOL.
@@ -56,7 +57,7 @@ REGLAS OBLIGATORIAS:
 
 FORMATO JSON:
 {
-  ${chunkIndex === 0 ? '"examTitle": "Test sobre ' + (targetFile || 'Temario') + '",' : ''}
+  ${chunkIndex === 0 ? '"examTitle": "Test sobre ' + (targetFileName || 'Temario') + '",' : ''}
   "questions": [
     {
       "question": "Texto de la pregunta...",
@@ -68,12 +69,13 @@ FORMATO JSON:
 }`;
 
     // Intentaremos con AnythingLLM primero (RAG)
-    if (ALLM_URL && ALLM_KEY && ALLM_WORKSPACE) {
+    if (ALLM_URL && ALLM_KEY) {
         try {
-            const isSpecificFile = targetFile && targetFile !== 'all';
+            const isSpecificFile = !!tempWorkspaceSlug;
             const mode = isSpecificFile ? 'query' : 'chat';
+            const workspaceToUse = tempWorkspaceSlug || ALLM_WORKSPACE;
 
-            const response = await fetch(`${ALLM_URL}/workspace/${ALLM_WORKSPACE}/chat`, {
+            const response = await fetch(`${ALLM_URL}/workspace/${workspaceToUse}/chat`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${ALLM_KEY}`,
@@ -132,15 +134,48 @@ FORMATO JSON:
 
 export async function POST(req: Request) {
     try {
-        const { numQuestions, difficulty, targetFile } = await req.json();
-        console.log(`[Generate API] Request: ${numQuestions} q, diff: ${difficulty}, file: ${targetFile}`);
+        const { numQuestions, difficulty, targetFile, targetFileName } = await req.json();
+        console.log(`[Generate API] Request: ${numQuestions} q, diff: ${difficulty}, file: ${targetFile}, name: ${targetFileName}`);
 
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
             async start(controller) {
+                let tempWorkspaceSlug: string | null = null;
                 try {
                     // Send an immediate heart-beat/init event to keep Vercel connection alive
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: "Iniciando generación..." })}\n\n`));
+
+                    // If targetFile is provided (it's a specific document path), create an isolated workspace and embed it
+                    if (targetFile && targetFile !== 'all' && ALLM_URL && ALLM_KEY) {
+                        try {
+                            console.log('[Generate API] Creating temporary isolated workspace...');
+                            const wsRes = await fetch(`${ALLM_URL}/workspace/new`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${ALLM_KEY}`,
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({ name: `exam-temp-${Date.now()}` })
+                            });
+
+                            if (wsRes.ok) {
+                                const wsData = await wsRes.json();
+                                tempWorkspaceSlug = wsData.workspace.slug;
+
+                                await fetch(`${ALLM_URL}/workspace/${tempWorkspaceSlug}/update-embeddings`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Authorization': `Bearer ${ALLM_KEY}`,
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({ adds: [targetFile] })
+                                });
+                                console.log(`[Generate API] Temp workspace ${tempWorkspaceSlug} ready with doc ${targetFile}.`);
+                            }
+                        } catch (e) {
+                            console.error('[Generate API] Failed to setup temp workspace:', e);
+                        }
+                    }
 
                     // Chunk the work - 5 questions per chunk for better stability
                     const CHUNK_SIZE = 5;
@@ -160,7 +195,7 @@ export async function POST(req: Request) {
                     // Process chunks SEQUENTIALLY to stay within timeouts and limits
                     for (let i = 0; i < chunkCounts.length; i++) {
                         const chunkSize = chunkCounts[i];
-                        const result = await generateChunk(chunkSize, difficulty, targetFile, i, numChunks);
+                        const result = await generateChunk(chunkSize, difficulty, targetFileName || targetFile, i, numChunks, tempWorkspaceSlug);
 
                         if (result.examTitle && i === 0) {
                             examTitle = result.examTitle;
@@ -190,6 +225,14 @@ export async function POST(req: Request) {
                     console.error('[Generate API] Stream failure:', err);
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err.message })}\n\n`));
                     controller.close();
+                } finally {
+                    if (tempWorkspaceSlug && ALLM_URL && ALLM_KEY) {
+                        console.log(`[Generate API] Cleaning up temp workspace ${tempWorkspaceSlug}`);
+                        await fetch(`${ALLM_URL}/workspace/${tempWorkspaceSlug}`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${ALLM_KEY}` }
+                        }).catch(e => console.error('[Generate API] Temp workspace cleanup failed', e));
+                    }
                 }
             },
         });

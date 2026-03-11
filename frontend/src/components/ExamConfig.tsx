@@ -47,7 +47,7 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
             const response = await fetch('/api/generate-test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ numQuestions, difficulty, targetFile }),
+                body: JSON.stringify({ numQuestions, difficulty, targetFile, targetFileName: targetFile !== 'all' ? files.find(f => f.docpath === targetFile)?.name || targetFile : 'all' }),
             });
 
             if (!response.ok) {
@@ -194,7 +194,7 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                             >
                                 <option value="all">Aleatorio (Todo el temario)</option>
                                 {files.map(f => (
-                                    <option key={f.id} value={f.name}>{f.name}</option>
+                                    <option key={f.id} value={f.docpath}>{f.name}</option>
                                 ))}
                             </select>
                         </div>
