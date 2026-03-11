@@ -88,9 +88,8 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                             examData.examTitle = parsed.examTitle || examData.examTitle;
                             examData.questions = [...examData.questions, ...(parsed.questions || [])];
 
-                            let firstChunkThreshold = 4;
-                            if (numQuestions <= 5) firstChunkThreshold = 2;
-                            else if (numQuestions <= 10) firstChunkThreshold = 3;
+                            // Start instantly even with the first question
+                            let firstChunkThreshold = 1;
 
                             // Let the user start immediately when enough questions arrive
                             if (examData.questions.length >= firstChunkThreshold && !firstChunkRevealed) {

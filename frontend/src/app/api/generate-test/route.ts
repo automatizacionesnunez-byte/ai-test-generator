@@ -144,8 +144,8 @@ export async function POST(req: Request) {
                     // Send an immediate heart-beat/init event to keep Vercel connection alive
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: "Iniciando generación..." })}\n\n`));
 
-                    // Chunk the work - Up to 10 questions per chunk for better performance
-                    const CHUNK_SIZE = 10;
+                    // Chunk the work - Up to 5 questions per chunk for better stability and faster initial response
+                    const CHUNK_SIZE = 5;
                     const numChunks = Math.ceil(numQuestions / CHUNK_SIZE);
                     const chunkCounts: number[] = [];
                     let remaining = numQuestions;
