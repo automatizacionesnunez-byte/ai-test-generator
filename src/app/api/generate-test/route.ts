@@ -33,12 +33,12 @@ async function generateChunk(
     targetFile: string | null,
     chunkIndex: number,
     totalChunks: number
-): Promise<{ examTitle?: string; questions: any[] }> {
+): Promise<{ examTitle?: string; questions: any[]; error?: string }> {
 
     console.log(`[Generate API] Starting chunk ${chunkIndex + 1}/${totalChunks} (size: ${chunkSize})`);
 
     const fileContext = targetFile && targetFile !== 'all'
-        ? `Basándote EXCLUSIVAMENTE en el archivo "${targetFile}". No uses información externa.`
+        ? `IMPORTANTE: Basándote EXCLUSIVAMENTE en el archivo o temática "${targetFile}". No uses información externa. Si no encuentras información suficiente, usa tus conocimientos sobre este tema específico.`
         : `Basándote en todo el temario disponible en tus documentos.`;
 
     const prompt = `Actúa como un experto preparador de oposiciones. Genera un examen tipo test en ESPAÑOL.
@@ -52,11 +52,11 @@ REGLAS OBLIGATORIAS:
 - No añadas explicaciones fuera del JSON.
 - Cada pregunta debe tener exactamente 4 opciones.
 - 'correctAnswer' debe ser el índice (0, 1, 2 o 3).
-- 'explanation' debe ser detallada y citar la normativa si es posible.
+- 'explanation' debe ser detallada y citar la normativa mencionada en el texto.
 
 FORMATO JSON:
 {
-  ${chunkIndex === 0 ? '"examTitle": "Título Descriptivo del Examen",' : ''}
+  ${chunkIndex === 0 ? '"examTitle": "Test sobre ' + (targetFile || 'Temario') + '",' : ''}
   "questions": [
     {
       "question": "Texto de la pregunta...",
@@ -67,18 +67,11 @@ FORMATO JSON:
   ]
 }`;
 
-    // Intento 1: AnythingLLM
+    // Intentaremos con AnythingLLM primero (RAG)
     if (ALLM_URL && ALLM_KEY && ALLM_WORKSPACE) {
         try {
             const isSpecificFile = targetFile && targetFile !== 'all';
             const mode = isSpecificFile ? 'query' : 'chat';
-
-            console.log(`[Generate API] Calling AnythingLLM (mode: ${mode}) for chunk ${chunkIndex + 1}...`);
-
-            // Adjust prompt for query mode
-            const refinedPrompt = isSpecificFile
-                ? `[BÚSQUEDA EXHAUSTIVA: ${targetFile}] ${prompt}`
-                : prompt;
 
             const response = await fetch(`${ALLM_URL}/workspace/${ALLM_WORKSPACE}/chat`, {
                 method: 'POST',
@@ -87,10 +80,10 @@ FORMATO JSON:
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    message: refinedPrompt,
+                    message: prompt,
                     mode: mode,
                 }),
-                signal: AbortSignal.timeout(60000), // 60s timeout per chunk
+                signal: AbortSignal.timeout(90000), // 90s timeout
             });
 
             if (response.ok) {
@@ -99,52 +92,42 @@ FORMATO JSON:
                 if (text) {
                     const parsed = extractJSON(text);
                     if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-                        console.log(`[Generate API] AnythingLLM success for chunk ${chunkIndex + 1}. Got ${parsed.questions.length} questions.`);
                         return {
                             examTitle: parsed.examTitle,
                             questions: parsed.questions
                         };
-                    } else {
-                        console.warn(`[Generate API] AnythingLLM returned invalid JSON or 0 questions for chunk ${chunkIndex + 1}. Raw text: ${text.substring(0, 100)}...`);
                     }
-                } else {
-                    console.warn(`[Generate API] AnythingLLM returned empty response for chunk ${chunkIndex + 1}. Data:`, data);
                 }
-            } else {
-                const errText = await response.text();
-                console.warn(`[Generate API] AnythingLLM HTTP Error: ${response.status} - ${errText}`);
             }
         } catch (e: any) {
-            console.error(`[Generate API] AnythingLLM failed for chunk ${chunkIndex + 1}:`, e.message);
+            console.error(`[Generate API] AnythingLLM failed:`, e.message);
         }
     }
 
-    // Fallback: Gemini (Si AnythingLLM falla o no da resultados)
+    // Fallback: Gemini Flash (Muy rápido y fiable)
     if (GEMINI_KEY) {
         try {
-            console.log(`[Generate API] Attempting Gemini fallback for chunk ${chunkIndex + 1}...`);
+            console.log(`[Generate API] Using Gemini fallback for chunk ${chunkIndex + 1}`);
             const genAI = new GoogleGenerativeAI(GEMINI_KEY);
             const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-            const geminiPrompt = `${prompt}\n\nNOTA: Si no puedes acceder al documento "${targetFile || 'general'}" debido a un error de conexión, genera preguntas realistas sobre temas típicos de oposiciones que encajen con ese título. DEVUELVE SOLO EL JSON.`;
-
-            const result = await model.generateContent(geminiPrompt);
+            const result = await model.generateContent(prompt);
             const textResponse = result.response.text();
             const parsed = extractJSON(textResponse);
 
             if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-                console.log(`[Generate API] Gemini fallback success for chunk ${chunkIndex + 1}.`);
                 return {
-                    examTitle: parsed.examTitle || (chunkIndex === 0 ? "Test (Generado por IA)" : undefined),
+                    examTitle: parsed.examTitle,
                     questions: parsed.questions
                 };
             }
         } catch (e: any) {
-            console.error(`[Generate API] Gemini fallback also failed for chunk ${chunkIndex + 1}:`, e.message);
+            console.error(`[Generate API] Gemini fallback failed:`, e.message);
+            return { questions: [], error: e.message };
         }
     }
 
-    return { questions: [] };
+    return { questions: [], error: "No se pudieron obtener resultados de la IA." };
 }
 
 export async function POST(req: Request) {
@@ -159,8 +142,8 @@ export async function POST(req: Request) {
                     // Send an immediate heart-beat/init event to keep Vercel connection alive
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: "Iniciando generación..." })}\n\n`));
 
-                    // Chunk the work - Up to 10 questions per chunk for better performance
-                    const CHUNK_SIZE = 10;
+                    // Chunk the work - 5 questions per chunk for better stability
+                    const CHUNK_SIZE = 5;
                     const numChunks = Math.ceil(numQuestions / CHUNK_SIZE);
                     const chunkCounts: number[] = [];
                     let remaining = numQuestions;
