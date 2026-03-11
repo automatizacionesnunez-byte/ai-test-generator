@@ -15,6 +15,7 @@ export async function POST(req: Request) {
         }
 
         const { message, history } = await req.json();
+        console.log(`[Chat API] Message: ${message.substring(0, 50)}...`);
 
         // Intento 1: AnythingLLM (para contexto de documentos)
         try {
@@ -25,10 +26,11 @@ export async function POST(req: Request) {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ message, mode: 'chat', history }),
+                signal: AbortSignal.timeout(30000), // 30s timeout
             });
 
             if (allmResponse.ok && allmResponse.body) {
-                // Return a stream response directly using Next.js route streaming
+                console.log("[Chat API] AnythingLLM stream started successfully.");
                 return new Response(allmResponse.body, {
                     headers: {
                         'Content-Type': 'text/event-stream',
@@ -36,48 +38,54 @@ export async function POST(req: Request) {
                         'Connection': 'keep-alive',
                     },
                 });
+            } else {
+                const errorText = await allmResponse.text();
+                console.warn(`[Chat API] AnythingLLM failed: ${allmResponse.status} ${errorText}`);
             }
-        } catch (err) {
-            console.warn("Fallo el chat con AnythingLLM, pasando a Gemini", err);
+        } catch (err: any) {
+            console.warn(`[Chat API] AnythingLLM fetch failed, falling back to Gemini: ${err.message}`);
         }
 
         // Intento 2: Gemini Directo (Fallback)
-        try {
-            if (!GEMINI_KEY) throw new Error('No Gemini Key');
-            const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        if (GEMINI_KEY) {
+            try {
+                const genAI = new GoogleGenerativeAI(GEMINI_KEY);
+                const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-            const prompt = `Responde a esto basándote en lo que sepas si no tienes documentos, eres un asistente útil y estás hablando con un usuario. Si la pregunta requiere un documento, avisa que la conexión con los temarios falló y responde según tu información general.\n\nMensaje:\n"${message}"`;
+                const prompt = `Actúa como un preparador de oposiciones servicial. Responde a la siguiente duda basándote en tus conocimientos generales (ya que la conexión con el temario específico está experimentando problemas).\n\nPregunta: "${message}"\n\nRespuesta técnica y clara:`;
 
-            // Non-streamed fallback for now, though we could stream gemini too
-            const result = await model.generateContentStream(prompt);
+                const result = await model.generateContentStream(prompt);
 
-            // To bridge Google GenAI stream to a SSE stream manually:
-            const stream = new ReadableStream({
-                async start(controller) {
-                    try {
-                        for await (const chunk of result.stream) {
-                            const chunkText = chunk.text();
-                            // Package it as AnythingLLM SSE format sort of to keep frontend unified
-                            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ textResponse: chunkText })}\n\n`));
+                const stream = new ReadableStream({
+                    async start(controller) {
+                        try {
+                            for await (const chunk of result.stream) {
+                                const chunkText = chunk.text();
+                                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ textResponse: chunkText })}\n\n`));
+                            }
+                            controller.enqueue(new TextEncoder().encode(`data: [DONE]\n\n`));
+                        } catch (e) {
+                            console.error('[Chat API] Gemini stream error', e);
+                        } finally {
+                            controller.close();
                         }
-                    } catch (e) {
-                        console.error('Gemini stream error', e);
-                    } finally {
-                        controller.close();
                     }
-                }
-            });
+                });
 
-            return new Response(stream, {
-                headers: { 'Content-Type': 'text/event-stream' }
-            });
-        } catch (geminiErr: any) {
-            console.error('Gemini fallback chat failed:', geminiErr.message);
-            throw new Error('Todas las IAs fallaron');
+                return new Response(stream, {
+                    headers: {
+                        'Content-Type': 'text/event-stream',
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+            } catch (geminiErr: any) {
+                console.error('[Chat API] Gemini fallback failed:', geminiErr.message);
+            }
         }
+
+        return NextResponse.json({ error: "No se pudo conectar con ninguna IA" }, { status: 503 });
     } catch (error: any) {
-        console.error('API Chat error:', error);
+        console.error('[Chat API] Global error:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
