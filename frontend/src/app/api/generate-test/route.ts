@@ -140,45 +140,12 @@ export async function POST(req: Request) {
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
             async start(controller) {
-                let tempWorkspaceSlug: string | null = null;
                 try {
                     // Send an immediate heart-beat/init event to keep Vercel connection alive
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: "Iniciando generación..." })}\n\n`));
 
-                    // If targetFile is provided (it's a specific document path), create an isolated workspace and embed it
-                    if (targetFile && targetFile !== 'all' && ALLM_URL && ALLM_KEY) {
-                        try {
-                            console.log('[Generate API] Creating temporary isolated workspace...');
-                            const wsRes = await fetch(`${ALLM_URL}/workspace/new`, {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${ALLM_KEY}`,
-                                    'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({ name: `exam-temp-${Date.now()}` })
-                            });
-
-                            if (wsRes.ok) {
-                                const wsData = await wsRes.json();
-                                tempWorkspaceSlug = wsData.workspace.slug;
-
-                                await fetch(`${ALLM_URL}/workspace/${tempWorkspaceSlug}/update-embeddings`, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Authorization': `Bearer ${ALLM_KEY}`,
-                                        'Content-Type': 'application/json',
-                                    },
-                                    body: JSON.stringify({ adds: [targetFile] })
-                                });
-                                console.log(`[Generate API] Temp workspace ${tempWorkspaceSlug} ready with doc ${targetFile}.`);
-                            }
-                        } catch (e) {
-                            console.error('[Generate API] Failed to setup temp workspace:', e);
-                        }
-                    }
-
-                    // Chunk the work - 5 questions per chunk for better stability
-                    const CHUNK_SIZE = 5;
+                    // Chunk the work - Up to 10 questions per chunk for better performance
+                    const CHUNK_SIZE = 10;
                     const numChunks = Math.ceil(numQuestions / CHUNK_SIZE);
                     const chunkCounts: number[] = [];
                     let remaining = numQuestions;
@@ -188,32 +155,38 @@ export async function POST(req: Request) {
                         remaining -= size;
                     }
 
-                    let currentId = 1;
                     let examTitle = "Test de Oposiciones";
                     let anyQuestions = false;
 
-                    // Process chunks SEQUENTIALLY to stay within timeouts and limits
-                    for (let i = 0; i < chunkCounts.length; i++) {
-                        const chunkSize = chunkCounts[i];
-                        const result = await generateChunk(chunkSize, difficulty, targetFileName || targetFile, i, numChunks, tempWorkspaceSlug);
+                    // Process chunks in PARALLEL for maximum speed
+                    const chunkPromises = chunkCounts.map(async (chunkSize, i) => {
+                        try {
+                            const result = await generateChunk(chunkSize, difficulty, targetFileName || targetFile, i, numChunks, ALLM_WORKSPACE || null);
 
-                        if (result.examTitle && i === 0) {
-                            examTitle = result.examTitle;
+                            if (result.examTitle && i === 0) {
+                                examTitle = result.examTitle;
+                            }
+
+                            if (result.questions && result.questions.length > 0) {
+                                anyQuestions = true;
+                                // Calculate IDs based on chunk index to maintain a clean sequence even if they arrive out of order
+                                const baseId = i * CHUNK_SIZE + 1;
+                                const processed = result.questions.map((q, idx) => ({
+                                    ...q,
+                                    id: baseId + idx,
+                                }));
+
+                                controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                                    examTitle,
+                                    questions: processed,
+                                })}\n\n`));
+                            }
+                        } catch (err) {
+                            console.error(`[Generate API] Chunk ${i} failed:`, err);
                         }
+                    });
 
-                        if (result.questions && result.questions.length > 0) {
-                            anyQuestions = true;
-                            const processed = result.questions.map(q => ({
-                                ...q,
-                                id: currentId++,
-                            }));
-
-                            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                                examTitle,
-                                questions: processed,
-                            })}\n\n`));
-                        }
-                    }
+                    await Promise.all(chunkPromises);
 
                     if (!anyQuestions) {
                         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "No se pudieron generar preguntas. Intenta con otro documento o reduce el número." })}\n\n`));
