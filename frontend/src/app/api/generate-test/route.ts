@@ -198,14 +198,6 @@ export async function POST(req: Request) {
                     console.error('[Generate API] Stream failure:', err);
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err.message })}\n\n`));
                     controller.close();
-                } finally {
-                    if (tempWorkspaceSlug && ALLM_URL && ALLM_KEY) {
-                        console.log(`[Generate API] Cleaning up temp workspace ${tempWorkspaceSlug}`);
-                        await fetch(`${ALLM_URL}/workspace/${tempWorkspaceSlug}`, {
-                            method: 'DELETE',
-                            headers: { 'Authorization': `Bearer ${ALLM_KEY}` }
-                        }).catch(e => console.error('[Generate API] Temp workspace cleanup failed', e));
-                    }
                 }
             },
         });
