@@ -36,6 +36,33 @@ export default function FileUpload() {
         addFiles(droppedFiles);
     };
 
+    React.useEffect(() => {
+        async function fetchWorkspaceFiles() {
+            try {
+                const allmWorkspace = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE || 'test-joaqui';
+                const wsRes = await fetch(`/api/vps/workspace/${allmWorkspace}`);
+                if (wsRes.ok) {
+                    const wsData = await wsRes.json();
+                    const docsArray = Array.isArray(wsData?.workspace)
+                        ? wsData.workspace[0]?.documents
+                        : wsData?.workspace?.documents;
+
+                    const activeDocs = (docsArray || []).map((doc: any) => ({
+                        id: doc.id || doc.docId || Math.random().toString(),
+                        name: doc.title || (doc.docpath ? doc.docpath.split('/').pop() : "Documento"),
+                        size: 'En Workspace',
+                        status: 'completed' as const,
+                        documentPath: doc.docpath
+                    }));
+                    setFiles(activeDocs);
+                }
+            } catch (err) {
+                console.error("Error fetching workspace files:", err);
+            }
+        }
+        fetchWorkspaceFiles();
+    }, []);
+
     const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
             addFiles(Array.from(e.target.files));
