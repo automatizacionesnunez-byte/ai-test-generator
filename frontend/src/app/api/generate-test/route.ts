@@ -39,38 +39,26 @@ async function generateChunk(
     console.log(`[Generate API] Starting chunk ${chunkIndex + 1}/${totalChunks} (size: ${chunkSize})`);
 
     const fileContext = targetFileName && targetFileName !== 'all'
-        ? `IMPORTANTE: Basándote EXCLUSIVAMENTE en el contenido del archivo "${targetFileName}". Ignora cualquier otra información.`
+        ? `Basándote EXCLUSIVAMENTE en el contenido del archivo "${targetFileName}".`
         : `Basándote en el temario disponible en el workspace.`;
 
-    const prompt = `Actúa como un preparador de oposiciones. Genera un examen tipo test basado en el temario.
-${fileContext}
-${totalChunks > 1 ? `Contenido: Este es el bloque ${chunkIndex + 1} de ${totalChunks}.` : ''}
-Dificultad: ${difficulty}.
-Cantidad: ${chunkSize} preguntas.
-
-REGLAS OBLIGATORIAS:
-- Responde ÚNICAMENTE con JSON.
-- Cada pregunta debe tener 4 opciones.
-- 'correctAnswer' es el índice (0-3).
-
-FORMATO JSON:
-{
-  ${chunkIndex === 0 ? '"examTitle": "Test: ' + (targetFileName || 'Temario') + '",' : ''}
-  "questions": [
-    {
-      "question": "...",
-      "options": ["A", "B", "C", "D"],
-      "correctAnswer": 0,
-      "explanation": "..."
-    }
-  ]
-}`;
-
-    // Intentaremos con AnythingLLM (RAG)
+    // Stage 1: Get raw knowledge from AnythingLLM
+    let rawText = "";
     if (ALLM_URL && ALLM_KEY) {
         try {
             const workspaceToUse = tempWorkspaceSlug || ALLM_WORKSPACE;
+            const retrievalPrompt = `Actúa como un experto en oposiciones. 
+${fileContext}
+Genera ${chunkSize} preguntas de examen tipo test con dificultad ${difficulty}.
+Cada pregunta debe tener:
+- Enunciado claro.
+- 4 opciones (A, B, C, D).
+- Indica cuál es la correcta.
+- Una explicación detallada citando la normativa.
 
+${totalChunks > 1 ? `Este es el bloque ${chunkIndex + 1} de ${totalChunks}. Varía los temas.` : ''}`;
+
+            console.log(`[Generate API] Requesting content from AnythingLLM (Workspace: ${workspaceToUse})...`);
             const response = await fetch(`${ALLM_URL}/workspace/${workspaceToUse}/chat`, {
                 method: 'POST',
                 headers: {
@@ -78,38 +66,69 @@ FORMATO JSON:
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    message: prompt,
+                    message: retrievalPrompt,
                     mode: 'query',
                 }),
-                signal: AbortSignal.timeout(90000), // 90s timeout
+                signal: AbortSignal.timeout(90000),
             });
 
             if (response.ok) {
                 const data = await response.json();
-                const text = data.textResponse || data.text;
-                if (text) {
-                    const parsed = extractJSON(text);
-                    if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-                        return {
-                            examTitle: parsed.examTitle,
-                            questions: parsed.questions
-                        };
-                    }
-                }
+                rawText = data.textResponse || data.text || "";
+                console.log(`[Generate API] AnythingLLM returned ${rawText.length} chars of content.`);
             }
         } catch (e: any) {
-            console.error(`[Generate API] AnythingLLM failed:`, e.message);
+            console.error(`[Generate API] AnythingLLM stage failed:`, e.message);
         }
     }
 
-    // Fallback: Gemini Flash (Muy rápido y fiable)
+    // Stage 2: Format with Gemini (or fallback if AnythingLLM failed)
     if (GEMINI_KEY) {
         try {
-            console.log(`[Generate API] Using Gemini fallback for chunk ${chunkIndex + 1}`);
             const genAI = new GoogleGenerativeAI(GEMINI_KEY);
             const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-            const result = await model.generateContent(prompt);
+            const formattingPrompt = rawText
+                ? `Convierte el siguiente texto de un examen en un objeto JSON VÁLIDO. 
+No resumas, mantén toda la información técnica y las explicaciones.
+
+REGLAS:
+- 'correctAnswer' debe ser el índice de la opción correcta (0 para A, 1 para B, 2 para C, 3 para D).
+- 'explanation' debe ser detallada.
+- Responde ÚNICAMENTE con el objeto JSON.
+
+TEXTO A FORMATEAR:
+${rawText}
+
+FORMATO REQUERIDO:
+{
+  ${chunkIndex === 0 ? '"examTitle": "Test: ' + (targetFileName || 'Temario') + '",' : ''}
+  "questions": [
+    {
+      "question": "...",
+      "options": ["...", "...", "...", "..."],
+      "correctAnswer": 0,
+      "explanation": "..."
+    }
+  ]
+}`
+                : `Actúa como un preparador de oposiciones. No tengo información previa, así que genera tú mismo ${chunkSize} preguntas sobre ${targetFileName || 'temario general'}.
+Dificultad: ${difficulty}.
+Responde ÚNICAMENTE con el siguiente formato JSON:
+{
+  ${chunkIndex === 0 ? '"examTitle": "Test: ' + (targetFileName || 'Temario') + '",' : ''}
+  "questions": [
+    {
+      "question": "...",
+      "options": ["...", "...", "...", "..."],
+      "correctAnswer": 0,
+      "explanation": "..."
+    }
+  ]
+}`;
+
+            console.log(`[Generate API] Stage 2: Formatting with Gemini Flash...`);
+            const result = await model.generateContent(formattingPrompt);
             const textResponse = result.response.text();
             const parsed = extractJSON(textResponse);
 
@@ -120,7 +139,7 @@ FORMATO JSON:
                 };
             }
         } catch (e: any) {
-            console.error(`[Generate API] Gemini fallback failed:`, e.message);
+            console.error(`[Generate API] Gemini stage failed:`, e.message);
             return { questions: [], error: e.message };
         }
     }
