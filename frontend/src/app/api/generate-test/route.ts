@@ -39,40 +39,36 @@ async function generateChunk(
     console.log(`[Generate API] Starting chunk ${chunkIndex + 1}/${totalChunks} (size: ${chunkSize})`);
 
     const fileContext = targetFileName && targetFileName !== 'all'
-        ? `IMPORTANTE: Basándote EXCLUSIVAMENTE en el archivo o temática "${targetFileName}". No uses información externa. Si no encuentras información suficiente, usa tus conocimientos sobre este tema específico.`
-        : `Basándote en todo el temario disponible en tus documentos.`;
+        ? `IMPORTANTE: Basándote EXCLUSIVAMENTE en el contenido del archivo "${targetFileName}". Ignora cualquier otra información.`
+        : `Basándote en el temario disponible en el workspace.`;
 
-    const prompt = `Actúa como un experto preparador de oposiciones. Genera un examen tipo test en ESPAÑOL.
+    const prompt = `Actúa como un preparador de oposiciones. Genera un examen tipo test basado en el temario.
 ${fileContext}
-${totalChunks > 1 ? `Contenido: Este es el bloque ${chunkIndex + 1} de ${totalChunks} del examen. No repitas preguntas de bloques anteriores.` : ''}
+${totalChunks > 1 ? `Contenido: Este es el bloque ${chunkIndex + 1} de ${totalChunks}.` : ''}
 Dificultad: ${difficulty}.
 Cantidad: ${chunkSize} preguntas.
 
 REGLAS OBLIGATORIAS:
-- Responde ÚNICAMENTE con un objeto JSON válido.
-- No añadas explicaciones fuera del JSON.
-- Cada pregunta debe tener exactamente 4 opciones.
-- 'correctAnswer' debe ser el índice (0, 1, 2 o 3).
-- 'explanation' debe ser detallada y citar la normativa mencionada en el texto.
+- Responde ÚNICAMENTE con JSON.
+- Cada pregunta debe tener 4 opciones.
+- 'correctAnswer' es el índice (0-3).
 
 FORMATO JSON:
 {
-  ${chunkIndex === 0 ? '"examTitle": "Test sobre ' + (targetFileName || 'Temario') + '",' : ''}
+  ${chunkIndex === 0 ? '"examTitle": "Test: ' + (targetFileName || 'Temario') + '",' : ''}
   "questions": [
     {
-      "question": "Texto de la pregunta...",
-      "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
+      "question": "...",
+      "options": ["A", "B", "C", "D"],
       "correctAnswer": 0,
-      "explanation": "Explicación detallada..."
+      "explanation": "..."
     }
   ]
 }`;
 
-    // Intentaremos con AnythingLLM primero (RAG)
+    // Intentaremos con AnythingLLM (RAG)
     if (ALLM_URL && ALLM_KEY) {
         try {
-            const isSpecificFile = !!tempWorkspaceSlug;
-            const mode = isSpecificFile ? 'query' : 'chat';
             const workspaceToUse = tempWorkspaceSlug || ALLM_WORKSPACE;
 
             const response = await fetch(`${ALLM_URL}/workspace/${workspaceToUse}/chat`, {
@@ -83,7 +79,7 @@ FORMATO JSON:
                 },
                 body: JSON.stringify({
                     message: prompt,
-                    mode: mode,
+                    mode: 'query',
                 }),
                 signal: AbortSignal.timeout(90000), // 90s timeout
             });
@@ -158,9 +154,10 @@ export async function POST(req: Request) {
                     let examTitle = "Test de Oposiciones";
                     let anyQuestions = false;
 
-                    // Process chunks in PARALLEL for maximum speed
-                    const chunkPromises = chunkCounts.map(async (chunkSize, i) => {
+                    // Process chunks SEQUENTIALLY for better stability on the VPS instance
+                    for (let i = 0; i < numChunks; i++) {
                         try {
+                            const chunkSize = chunkCounts[i];
                             const result = await generateChunk(chunkSize, difficulty, targetFileName || targetFile, i, numChunks, ALLM_WORKSPACE || null);
 
                             if (result.examTitle && i === 0) {
@@ -169,7 +166,6 @@ export async function POST(req: Request) {
 
                             if (result.questions && result.questions.length > 0) {
                                 anyQuestions = true;
-                                // Calculate IDs based on chunk index to maintain a clean sequence even if they arrive out of order
                                 const baseId = i * CHUNK_SIZE + 1;
                                 const processed = result.questions.map((q, idx) => ({
                                     ...q,
@@ -184,9 +180,7 @@ export async function POST(req: Request) {
                         } catch (err) {
                             console.error(`[Generate API] Chunk ${i} failed:`, err);
                         }
-                    });
-
-                    await Promise.all(chunkPromises);
+                    }
 
                     if (!anyQuestions) {
                         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "No se pudieron generar preguntas. Intenta con otro documento o reduce el número." })}\n\n`));

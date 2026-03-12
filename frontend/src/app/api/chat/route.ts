@@ -25,7 +25,7 @@ export async function POST(req: Request) {
                     'Authorization': `Bearer ${ALLM_KEY}`,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ message, mode: 'chat', history }),
+                body: JSON.stringify({ message, mode: 'query', history }),
                 signal: AbortSignal.timeout(30000), // 30s timeout
             });
 

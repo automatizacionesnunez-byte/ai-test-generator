@@ -76,7 +76,7 @@ export async function sendChatMessage(message: string, history: ChatMessage[] = 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             message,
-            mode: 'chat',
+            mode: 'query',
             history,
         }),
     });
