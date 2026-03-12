@@ -50,7 +50,7 @@ export async function POST(req: Request) {
         if (GEMINI_KEY) {
             try {
                 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-                const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+                const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
                 const prompt = `Actúa como un preparador de oposiciones servicial. Responde a la siguiente duda basándote en tus conocimientos generales (ya que la conexión con el temario específico está experimentando problemas).\n\nPregunta: "${message}"\n\nRespuesta técnica y clara:`;
 

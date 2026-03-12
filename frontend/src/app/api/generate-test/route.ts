@@ -83,7 +83,7 @@ Escribe los enunciados, las opciones correctas y una breve explicación técnica
     if (GEMINI_KEY) {
         try {
             const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+            const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
             const formattingPrompt = retrievedContent
                 ? `Actúa como un experto preparador de oposiciones. Transforma el siguiente contenido en un examen tipo test en formato JSON.
