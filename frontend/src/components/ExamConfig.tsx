@@ -40,9 +40,11 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
         }
         fetchFiles();
     }, []);
+    const [status, setStatus] = useState('');
 
     const handleGenerate = async () => {
         setIsLoading(true);
+        setStatus('Iniciando...');
         try {
             const response = await fetch('/api/generate-test', {
                 method: 'POST',
@@ -78,6 +80,7 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                         const msg = line.substring(6).trim();
                         if (msg === '[DONE]') {
                             setIsLoading(false);
+                            setStatus('');
                             return;
                         }
 
@@ -85,8 +88,16 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                             const parsed = JSON.parse(msg);
                             if (parsed.error) throw new Error(parsed.error);
 
+                            if (parsed.status) {
+                                setStatus(parsed.status);
+                                continue;
+                            }
+
                             examData.examTitle = parsed.examTitle || examData.examTitle;
-                            examData.questions = [...examData.questions, ...(parsed.questions || [])];
+                            if (parsed.questions && parsed.questions.length > 0) {
+                                examData.questions = [...examData.questions, ...parsed.questions];
+                                setStatus(`Bloque recibido (${examData.questions.length}/${numQuestions})`);
+                            }
 
                             // Start instantly even with the first question
                             let firstChunkThreshold = 1;
@@ -128,8 +139,9 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
 
         } catch (error: any) {
             console.error('Error generating exam:', error);
-            alert(`Error al generar el examen: ${error.message || 'desconocido'}`);
+            alert(`Error: ${error.message}`);
             setIsLoading(false);
+            setStatus('');
         }
     };
 
@@ -258,7 +270,7 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                             {isLoading ? (
                                 <>
                                     <div className="w-5 h-5 border-2 border-brand-dark/30 border-t-brand-dark rounded-full animate-spin" />
-                                    <span>Generando...</span>
+                                    <span>{status || 'Generando...'}</span>
                                 </>
                             ) : (
                                 <>

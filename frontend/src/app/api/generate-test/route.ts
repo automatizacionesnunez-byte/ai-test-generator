@@ -38,27 +38,22 @@ async function generateChunk(
 
     console.log(`[Generate API] Starting chunk ${chunkIndex + 1}/${totalChunks} (size: ${chunkSize})`);
 
-    const fileContext = targetFileName && targetFileName !== 'all'
-        ? `Basándote EXCLUSIVAMENTE en el contenido del archivo "${targetFileName}".`
-        : `Basándote en el temario disponible en el workspace.`;
+    const isAllFiles = !targetFileName || targetFileName === 'all';
+    const fileContext = isAllFiles
+        ? `Basándote en todo el temario disponible en el workspace.`
+        : `Basándote EXCLUSIVAMENTE en el contenido del archivo "${targetFileName}".`;
 
-    // Stage 1: Get raw knowledge from AnythingLLM
-    let rawText = "";
+    // Stage 1: Retrieval with AnythingLLM
+    let retrievedContent = "";
     if (ALLM_URL && ALLM_KEY) {
         try {
             const workspaceToUse = tempWorkspaceSlug || ALLM_WORKSPACE;
-            const retrievalPrompt = `Actúa como un experto en oposiciones. 
+            // Simplified prompt for faster retrieval
+            const retrievalPrompt = `Analiza el temario y extrae información detallada para generar ${chunkSize} preguntas de test sobre: ${isAllFiles ? 'temas variados' : targetFileName}.
 ${fileContext}
-Genera ${chunkSize} preguntas de examen tipo test con dificultad ${difficulty}.
-Cada pregunta debe tener:
-- Enunciado claro.
-- 4 opciones (A, B, C, D).
-- Indica cuál es la correcta.
-- Una explicación detallada citando la normativa.
+Escribe los enunciados, las opciones correctas y una breve explicación técnica para cada una. No te preocupes por el formato JSON todavía.`;
 
-${totalChunks > 1 ? `Este es el bloque ${chunkIndex + 1} de ${totalChunks}. Varía los temas.` : ''}`;
-
-            console.log(`[Generate API] Requesting content from AnythingLLM (Workspace: ${workspaceToUse})...`);
+            console.log(`[Generate API] Retrieving content from AnythingLLM...`);
             const response = await fetch(`${ALLM_URL}/workspace/${workspaceToUse}/chat`, {
                 method: 'POST',
                 headers: {
@@ -74,49 +69,51 @@ ${totalChunks > 1 ? `Este es el bloque ${chunkIndex + 1} de ${totalChunks}. Var�
 
             if (response.ok) {
                 const data = await response.json();
-                rawText = data.textResponse || data.text || "";
-                console.log(`[Generate API] AnythingLLM returned ${rawText.length} chars of content.`);
+                retrievedContent = data.textResponse || data.text || "";
+                console.log(`[Generate API] Retrieval successful (${retrievedContent.length} chars).`);
+            } else {
+                console.error(`[Generate API] AnythingLLM Error: ${response.status}`);
             }
         } catch (e: any) {
-            console.error(`[Generate API] AnythingLLM stage failed:`, e.message);
+            console.error(`[Generate API] Stage 1 failed:`, e.message);
         }
     }
 
-    // Stage 2: Format with Gemini (or fallback if AnythingLLM failed)
+    // Stage 2: JSON Synthesis with Gemini
     if (GEMINI_KEY) {
         try {
             const genAI = new GoogleGenerativeAI(GEMINI_KEY);
             const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-            const formattingPrompt = rawText
-                ? `Convierte el siguiente texto de un examen en un objeto JSON VÁLIDO. 
-No resumas, mantén toda la información técnica y las explicaciones.
+            const formattingPrompt = retrievedContent
+                ? `Actúa como un experto preparador de oposiciones. Transforma el siguiente contenido en un examen tipo test en formato JSON.
 
-REGLAS:
-- 'correctAnswer' debe ser el índice de la opción correcta (0 para A, 1 para B, 2 para C, 3 para D).
-- 'explanation' debe ser detallada.
+CONTENIDO:
+${retrievedContent}
+
+REGLAS DE FORMATO:
+- Genera exactamente ${chunkSize} preguntas.
+- Cada pregunta debe tener 4 opciones en un array.
+- 'correctAnswer' debe ser un número entre 0 y 3.
+- 'explanation' debe ser detallada y clara.
 - Responde ÚNICAMENTE con el objeto JSON.
 
-TEXTO A FORMATEAR:
-${rawText}
-
-FORMATO REQUERIDO:
+ESQUEMA JSON:
 {
-  ${chunkIndex === 0 ? '"examTitle": "Test: ' + (targetFileName || 'Temario') + '",' : ''}
+  ${chunkIndex === 0 ? '"examTitle": "Test ' + (isAllFiles ? 'General' : targetFileName) + '",' : ''}
   "questions": [
     {
       "question": "...",
-      "options": ["...", "...", "...", "..."],
+      "options": ["A", "B", "C", "D"],
       "correctAnswer": 0,
       "explanation": "..."
     }
   ]
 }`
-                : `Actúa como un preparador de oposiciones. No tengo información previa, así que genera tú mismo ${chunkSize} preguntas sobre ${targetFileName || 'temario general'}.
-Dificultad: ${difficulty}.
-Responde ÚNICAMENTE con el siguiente formato JSON:
+                : `Genera de forma autónoma ${chunkSize} preguntas de oposición sobre ${isAllFiles ? 'Derecho y Temario General' : targetFileName} con dificultad ${difficulty}.
+Responde ÚNICAMENTE con el formato JSON:
 {
-  ${chunkIndex === 0 ? '"examTitle": "Test: ' + (targetFileName || 'Temario') + '",' : ''}
+  ${chunkIndex === 0 ? '"examTitle": "Test ' + (isAllFiles ? 'General' : targetFileName) + '",' : ''}
   "questions": [
     {
       "question": "...",
@@ -127,24 +124,27 @@ Responde ÚNICAMENTE con el siguiente formato JSON:
   ]
 }`;
 
-            console.log(`[Generate API] Stage 2: Formatting with Gemini Flash...`);
+            console.log(`[Generate API] Synthesizing JSON with Gemini...`);
             const result = await model.generateContent(formattingPrompt);
             const textResponse = result.response.text();
             const parsed = extractJSON(textResponse);
 
             if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+                console.log(`[Generate API] Chunk ${chunkIndex + 1} finalized with ${parsed.questions.length} questions.`);
                 return {
                     examTitle: parsed.examTitle,
                     questions: parsed.questions
                 };
+            } else {
+                console.error(`[Generate API] Gemini failed to produce valid JSON for chunk ${chunkIndex + 1}`);
             }
         } catch (e: any) {
-            console.error(`[Generate API] Gemini stage failed:`, e.message);
+            console.error(`[Generate API] Stage 2 failed:`, e.message);
             return { questions: [], error: e.message };
         }
     }
 
-    return { questions: [], error: "No se pudieron obtener resultados de la IA." };
+    return { questions: [], error: "Error en la síntesis de la IA." };
 }
 
 export async function POST(req: Request) {
@@ -177,6 +177,8 @@ export async function POST(req: Request) {
                     for (let i = 0; i < numChunks; i++) {
                         try {
                             const chunkSize = chunkCounts[i];
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: `Generando bloque ${i + 1} de ${numChunks}...` })}\n\n`));
+
                             const result = await generateChunk(chunkSize, difficulty, targetFileName || targetFile, i, numChunks, ALLM_WORKSPACE || null);
 
                             if (result.examTitle && i === 0) {
@@ -195,9 +197,13 @@ export async function POST(req: Request) {
                                     examTitle,
                                     questions: processed,
                                 })}\n\n`));
+                            } else if (result.error) {
+                                console.error(`[Generate API] Chunk ${i} returned error:`, result.error);
+                                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: `Error en bloque ${i + 1}: ${result.error}` })}\n\n`));
                             }
-                        } catch (err) {
+                        } catch (err: any) {
                             console.error(`[Generate API] Chunk ${i} failed:`, err);
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: `Error crítico en bloque ${i + 1}: ${err.message}` })}\n\n`));
                         }
                     }
 
