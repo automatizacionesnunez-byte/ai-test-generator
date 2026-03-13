@@ -73,11 +73,10 @@ Escribe los enunciados, las opciones correctas y una breve explicación técnica
             if (response.ok) {
                 const data = await response.json();
                 retrievedContent = (data.textResponse || data.text || "").trim();
-                console.log(`[Generate API] AnythingLLM Response (${retrievedContent.length} chars): "${retrievedContent.substring(0, 100)}..."`);
+                console.log(`[Generate API] AnythingLLM Response (${retrievedContent.length} chars).`);
 
-                // If AnythingLLM basically says it found nothing, we treat it as empty to trigger autonomous generation
                 if (retrievedContent.toLowerCase().includes("no se ha encontrado") || retrievedContent.length < 50) {
-                    console.warn("[Generate API] AnythingLLM returned insufficient content. Switching to autonomous mode.");
+                    console.warn("[Generate API] Insufficient content from RAG. Forcing autonomous mode.");
                     retrievedContent = "";
                 }
             } else {
@@ -85,102 +84,62 @@ Escribe los enunciados, las opciones correctas y una breve explicación técnica
                 console.error(`[Generate API] AnythingLLM Error ${response.status}:`, errorBody);
             }
         } catch (e: any) {
-            console.error(`[Generate API] Stage 1 (Retrieval) failed:`, e.message);
+            console.error(`[Generate API] Stage 1 failed:`, e.message);
         }
     }
 
     const synthesisPrompt = retrievedContent
-        ? `Actúa como un experto preparador de oposiciones. Transforma el siguiente contenido en un examen tipo test en formato JSON.
-
-CONTENIDO RECUPERADO:
+        ? `Actúa como un preparador de oposiciones. Transforma este contenido en un examen JSON:
+CONTENIDO:
 ${retrievedContent}
+Reglas: ${chunkSize} preguntas, 4 opciones, 'correctAnswer' (0-3), 'explanation'.`
+        : `Genera ${chunkSize} preguntas de oposición sobre ${targetFileName || 'Temario General'} en formato JSON.
+Reglas: 4 opciones, 'correctAnswer' (0-3), 'explanation'.`;
 
-REGLAS DE FORMATO:
-- Genera exactamente ${chunkSize} preguntas.
-- Cada pregunta debe tener 4 opciones en un array.
-- 'correctAnswer' debe ser un número entre 0 y 3.
-- 'explanation' debe ser detallada y clara.
-- Responde ÚNICAMENTE con un objeto JSON válido.
-
-ESQUEMA JSON REQUERIDO:
-{
-  ${chunkIndex === 0 ? '"examTitle": "Test ' + (isAllFiles ? 'General' : targetFileName) + '",' : ''}
-  "questions": [
-    {
-      "question": "...",
-      "options": ["A", "B", "C", "D"],
-      "correctAnswer": 0,
-      "explanation": "..."
-    }
-  ]
-}`
-        : `Genera de forma autónoma ${chunkSize} preguntas de oposición de alta calidad sobre ${isAllFiles ? 'Temario de Oposiciones' : targetFileName} con dificultad ${difficulty}.
-Responde ÚNICAMENTE con este formato JSON:
-{
-  ${chunkIndex === 0 ? '"examTitle": "Test ' + (isAllFiles ? 'General' : targetFileName) + '",' : ''}
-  "questions": [
-    {
-      "question": "...",
-      "options": ["A", "B", "C", "D"],
-      "correctAnswer": 0,
-      "explanation": "..."
-    }
-  ]
-}`;
-
-    // Stage 2: JSON Synthesis
+    // Stage 2: Synthesis
     let lastAIErr = "";
     try {
         if (openai) {
-            console.log(`[Generate API] Synthesizing JSON with OpenAI (Size: ${chunkSize})...`);
+            console.log(`[Generate API] OpenAI Synthesis Start...`);
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [
-                    { role: "system", content: "Genera exámenes en formato JSON siguiendo estrictamente el esquema solicitado." },
+                    { role: "system", content: "Genera exámenes JSON siguiendo este esquema: { questions: [{ question, options, correctAnswer, explanation }] }" },
                     { role: "user", content: synthesisPrompt }
                 ],
                 response_format: { type: "json_object" }
             });
 
             const content = completion.choices[0].message.content || "{}";
-            const parsed = extractJSON(content);
+            console.log(`[Generate API] OpenAI Raw Result: ${content.substring(0, 100)}...`);
+            const parsed = JSON.parse(content);
 
             if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
                 console.log(`[Generate API] OpenAI Success: ${parsed.questions.length} questions.`);
                 return {
-                    examTitle: parsed.examTitle,
+                    examTitle: parsed.examTitle || (targetFileName ? `Test ${targetFileName}` : "Test"),
                     questions: parsed.questions
                 };
             }
-            lastAIErr = "El formato JSON de OpenAI no contenía preguntas válidas.";
+            lastAIErr = "JSON sin preguntas.";
         }
     } catch (e: any) {
         console.error(`[Generate API] OpenAI Error:`, e.message);
         lastAIErr = e.message;
     }
 
-    // Fallback: Gemini
-    if (GEMINI_KEY) {
+    // Fallback Gemini
+    if (GEMINI_KEY && !retrievedContent) { // Only fallback if we don't have sensitive RAG content or as last resort
         try {
-            console.log(`[Generate API] Attempting Fallback with Gemini...`);
             const genAI = new GoogleGenerativeAI(GEMINI_KEY);
             const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
             const result = await model.generateContent(synthesisPrompt);
-            const textResponse = result.response.text();
-            const parsed = extractJSON(textResponse);
-            if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-                return { examTitle: parsed.examTitle, questions: parsed.questions };
-            }
-        } catch (e: any) {
-            console.error(`[Generate API] Gemini Fallback failed:`, e.message);
-        }
+            const parsed = extractJSON(result.response.text());
+            if (parsed && Array.isArray(parsed.questions)) return parsed;
+        } catch (e) { console.error("Gemini failed too"); }
     }
 
-    const finalError = !retrievedContent && (ALLM_URL && ALLM_KEY)
-        ? "No se pudo recuperar contenido del temario y la generación autónoma también falló."
-        : `Error en la síntesis final (${lastAIErr || 'IA no respondió correctamente'}).`;
-
-    return { questions: [], error: finalError };
+    return { questions: [], error: `Error en síntesis: ${lastAIErr || 'IA no respondió'}` };
 }
 
 export async function POST(req: Request) {
