@@ -1,17 +1,48 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import fs from 'fs';
+import path from 'path';
 
 export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
 
-// Config
+/**
+ * Emergency helper to load OAI key manually if environment fails
+ */
+function getOpenAIKey() {
+    if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
+
+    console.log("[Generate API] Key missing in process.env. Attempting manual load...");
+    try {
+        // Try multiple possible locations for .env
+        const paths = [
+            path.join(process.cwd(), '.env'),
+            path.join(process.cwd(), 'frontend', '.env'),
+            path.join(process.cwd(), '..', '.env')
+        ];
+
+        for (const p of paths) {
+            if (fs.existsSync(p)) {
+                const content = fs.readFileSync(p, 'utf8');
+                const match = content.match(/OPENAI_API_KEY=([^\s]+)/);
+                if (match && match[1]) {
+                    console.log(`[Generate API] Key found manually in ${p}`);
+                    return match[1].trim();
+                }
+            }
+        }
+    } catch (e) {
+        console.error("[Generate API] Manual load failed:", e);
+    }
+    return null;
+}
+
 const ALLM_URL = process.env.NEXT_PUBLIC_ANYTHINGLLM_URL;
 const ALLM_KEY = process.env.NEXT_PUBLIC_ANYTHINGLLM_KEY;
 const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE;
-const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_KEY = getOpenAIKey();
 
-// Log API key availability during module load (masked for safety)
-console.log(`[Generate API] Init: OpenAI Key: ${OPENAI_KEY ? 'Present' : 'MISSING'}`);
+console.log(`[Generate API] Init: OpenAI Key: ${OPENAI_KEY ? 'Present (Manual/Env)' : 'MISSING'}`);
 
 /**
  * Helper to extract JSON from a text that might contain markdown blocks or control chars
@@ -59,9 +90,6 @@ async function generateChunk(
 ): Promise<{ examTitle?: string; questions: any[]; error?: string }> {
 
     console.log(`[Generate API] Chunk ${chunkIndex + 1}/${totalChunks} (size: ${chunkSize})`);
-
-    // Verify key inside function to catch dynamic env changes
-    const curOpenAIKey = process.env.OPENAI_API_KEY;
 
     const isAllFiles = !targetFileName || targetFileName === 'all';
     const fileContext = isAllFiles
@@ -125,10 +153,10 @@ REGLAS:
     let lastAIErr = "";
 
     // Stage 2: OpenAI Synthesis
-    if (curOpenAIKey) {
+    if (OPENAI_KEY) {
         try {
             console.log("[Generate API] OpenAI Start...");
-            const openai = new OpenAI({ apiKey: curOpenAIKey });
+            const openai = new OpenAI({ apiKey: OPENAI_KEY });
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [
