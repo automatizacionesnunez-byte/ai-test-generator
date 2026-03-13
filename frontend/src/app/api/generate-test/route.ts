@@ -65,13 +65,18 @@ async function generateChunk(
         ? `Basándote en todo el temario disponible.`
         : `Basándote EXCLUSIVAMENTE en el contenido del archivo "${targetFileName}".`;
 
+    const prompt = `Actúa como un experto preparador de oposiciones. Genera un examen tipo test en ESPAÑOL.
+${fileContext}
+${totalChunks > 1 ? `Contenido: Este es el bloque ${chunkIndex + 1} de ${totalChunks} del examen. Genera preguntas únicas que no se repitan en otros bloques.` : ''}
+Dificultad: ${difficulty}.
+Cantidad: ${chunkSize} preguntas.`;
+
     // Stage 1: Retrieval with AnythingLLM
     let retrievedContent = "";
     if (ALLM_URL && ALLM_KEY) {
         try {
             const workspaceToUse = tempWorkspaceSlug || ALLM_WORKSPACE;
-            const retrievalPrompt = `Extrae información técnica detallada para generar ${chunkSize} preguntas de test sobre: ${isAllFiles ? 'temas variados' : targetFileName}.
-${fileContext}
+            const retrievalPrompt = `${prompt}
 Escribe los enunciados y las respuestas correctas.`;
 
             console.log(`[Generate API] RAG Request to ${workspaceToUse}...`);
@@ -115,8 +120,7 @@ REGLAS CRÍTICAS:
 - PROHIBIDO usar solo letras (A, B, C, D) como texto de las opciones.
 - Cada opción debe ser una respuesta plausible relacionada con la pregunta.
 - Formato Estricto JSON: { "questions": [{ "question": "...", "options": ["Texto de opción 1", "Texto de opción 2", "Texto de opción 3", "Texto de opción 4"], "correctAnswer": 0, "explanation": "..." }] }`
-        : `GENERA ${chunkSize} PREGUNTAS DE EXAMEN DE OPOSICIÓN SOBRE: ${targetFileName || 'Temario General'}
-DIFICULTAD: ${difficulty}
+        : `${prompt}
 
 REGLAS CRÍTICAS:
 - Las preguntas deben ser técnicas y profesionales.
@@ -173,7 +177,8 @@ export async function POST(req: Request) {
                 try {
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: "Iniciando..." })}\n\n`));
 
-                    const CHUNK_SIZE = 5;
+                    // Chunk the work - 10 questions per chunk for better stability and speed
+                    const CHUNK_SIZE = 10;
                     const numChunks = Math.ceil(numQuestions / CHUNK_SIZE);
                     const chunkCounts: number[] = [];
                     let remaining = numQuestions;
@@ -183,21 +188,34 @@ export async function POST(req: Request) {
                         remaining -= size;
                     }
 
+                    let currentId = 1;
+                    let examTitle = "Test de Oposiciones";
                     let anyQuestions = false;
-                    for (let i = 0; i < numChunks; i++) {
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: `Bloque ${i + 1}/${numChunks}...` })}\n\n`));
 
-                        const result = await generateChunk(chunkCounts[i], difficulty, targetFileName || targetFile, i, numChunks, ALLM_WORKSPACE || null);
+                    console.log(`[Generate API] Launching ${numChunks} chunks in parallel...`);
+                    
+                    // Fire all chunks in PARALLEL but stream them in order to the controller
+                    const chunkPromises = chunkCounts.map((chunkSize, i) => 
+                        generateChunk(chunkSize, difficulty, targetFileName || targetFile, i, numChunks, ALLM_WORKSPACE || null)
+                    );
+
+                    for (let i = 0; i < chunkPromises.length; i++) {
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: `Bloque ${i + 1}/${numChunks}...` })}\n\n`));
+                        const result = await chunkPromises[i];
+
+                        if (result.examTitle && i === 0) {
+                            examTitle = result.examTitle;
+                        }
 
                         if (result.questions && result.questions.length > 0) {
                             anyQuestions = true;
-                            const processed = result.questions.map((q, idx) => ({
+                            const processed = result.questions.map(q => ({
                                 ...q,
-                                id: (i * CHUNK_SIZE) + idx + 1,
+                                id: currentId++,
                             }));
 
                             controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                                examTitle: result.examTitle || "Test",
+                                examTitle,
                                 questions: processed,
                             })}\n\n`));
                         } else if (result.error) {

@@ -17,6 +17,7 @@ import ExamView from './views/ExamView';
 export default function Dashboard() {
     const [currentView, setCurrentView] = useState<'dashboard' | 'files' | 'history' | 'settings' | 'chat' | 'exam'>('dashboard');
     const [activeExam, setActiveExam] = useState<any>(null);
+    const [examId, setExamId] = useState<string>("");
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     const sidebarItems = [
@@ -56,6 +57,7 @@ export default function Dashboard() {
                         <div className="xl:col-span-4 mt-8 xl:mt-0">
                             <ExamConfig onExamGenerated={(data) => {
                                 setActiveExam(data);
+                                if (!examId) setExamId(Date.now().toString());
                                 setCurrentView('exam');
                             }} />
                         </div>
@@ -72,6 +74,7 @@ export default function Dashboard() {
                         questions: failedQuestions,
                         totalQuestions: failedQuestions.length
                     });
+                    setExamId(Date.now().toString());
                     setCurrentView('exam');
                 }} />;
             case 'settings':
@@ -79,9 +82,12 @@ export default function Dashboard() {
             case 'exam':
                 return activeExam ? (
                     <ExamView
-                        key={activeExam.examTitle}
+                        key={examId}
                         data={activeExam}
-                        onBack={() => setCurrentView('dashboard')}
+                        onBack={() => {
+                            setCurrentView('dashboard');
+                            setExamId(""); // Reset ID for future exams
+                        }}
                         onRetake={(failedQuestions) => {
                             setActiveExam({
                                 examTitle: `${activeExam.examTitle} (Repaso)`,

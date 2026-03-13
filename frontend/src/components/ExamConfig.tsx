@@ -88,12 +88,15 @@ export default function ExamConfig({ onExamGenerated }: { onExamGenerated?: (dat
                             const parsed = JSON.parse(msg);
                             if (parsed.error) throw new Error(parsed.error);
 
+                            // Stabilize title: Only set it if we don't have one yet
+                            if (!examData.examTitle || examData.examTitle === "Test Generado") {
+                                examData.examTitle = parsed.examTitle || examData.examTitle;
+                            }
                             if (parsed.status) {
                                 setStatus(parsed.status);
                                 continue;
                             }
 
-                            examData.examTitle = parsed.examTitle || examData.examTitle;
                             if (parsed.questions && parsed.questions.length > 0) {
                                 examData.questions = [...examData.questions, ...parsed.questions];
                                 setStatus(`Bloque recibido (${examData.questions.length}/${numQuestions})`);
