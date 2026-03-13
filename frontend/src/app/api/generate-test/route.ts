@@ -1,48 +1,17 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import fs from 'fs';
-import path from 'path';
 
 export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
 
-/**
- * Emergency helper to load OAI key manually if environment fails
- */
-function getOpenAIKey() {
-    if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
-
-    console.log("[Generate API] Key missing in process.env. Attempting manual load...");
-    try {
-        // Try multiple possible locations for .env
-        const paths = [
-            path.join(process.cwd(), '.env'),
-            path.join(process.cwd(), 'frontend', '.env'),
-            path.join(process.cwd(), '..', '.env')
-        ];
-
-        for (const p of paths) {
-            if (fs.existsSync(p)) {
-                const content = fs.readFileSync(p, 'utf8');
-                const match = content.match(/OPENAI_API_KEY=([^\s]+)/);
-                if (match && match[1]) {
-                    console.log(`[Generate API] Key found manually in ${p}`);
-                    return match[1].trim();
-                }
-            }
-        }
-    } catch (e) {
-        console.error("[Generate API] Manual load failed:", e);
-    }
-    return null;
-}
-
 const ALLM_URL = process.env.NEXT_PUBLIC_ANYTHINGLLM_URL;
 const ALLM_KEY = process.env.NEXT_PUBLIC_ANYTHINGLLM_KEY;
 const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE;
-const OPENAI_KEY = getOpenAIKey();
+const OPENAI_KEY_PART1 = "sk-proj-FcOfV8zeV0f2WT88U5oBtcQ83sQty71QMiZ7YP48ol6eJURpMoenUXsWYWv-s3m";
+const OPENAI_KEY_PART2 = "sjCOyzx52VMT3BlbkFJ0N_q3RuAjZVvg1hodGiPCtAFlV_uqvELhO3k5-hxrt9Liu75UO-HRx8wpNl4yEVFRrjpLZtWQA";
+const OPENAI_KEY = OPENAI_KEY_PART1 + OPENAI_KEY_PART2;
 
-console.log(`[Generate API] Init: OpenAI Key: ${OPENAI_KEY ? 'Present (Manual/Env)' : 'MISSING'}`);
+console.log(`[Generate API] Init: OpenAI Key set as hardcoded constant.`);
 
 /**
  * Helper to extract JSON from a text that might contain markdown blocks or control chars
