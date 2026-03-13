@@ -54,9 +54,9 @@ async function generateChunk(
             const workspaceToUse = tempWorkspaceSlug || ALLM_WORKSPACE;
             const retrievalPrompt = `Analiza el temario y extrae información detallada para generar ${chunkSize} preguntas de test sobre: ${isAllFiles ? 'temas variados' : targetFileName}.
 ${fileContext}
-Escribe los enunciados, las opciones correctas y una breve explicación técnica para cada una. No te preocupes por el formato JSON todavía.`;
+Escribe los enunciados, las opciones correctas y una breve explicación técnica para cada una.`;
 
-            console.log(`[Generate API] Retrieving content from AnythingLLM...`);
+            console.log(`[Generate API] Requesting AnythingLLM (Workspace: ${workspaceToUse})...`);
             const response = await fetch(`${ALLM_URL}/workspace/${workspaceToUse}/chat`, {
                 method: 'POST',
                 headers: {
@@ -72,13 +72,20 @@ Escribe los enunciados, las opciones correctas y una breve explicación técnica
 
             if (response.ok) {
                 const data = await response.json();
-                retrievedContent = data.textResponse || data.text || "";
-                console.log(`[Generate API] Retrieval successful (${retrievedContent.length} chars).`);
+                retrievedContent = (data.textResponse || data.text || "").trim();
+                console.log(`[Generate API] AnythingLLM Response (${retrievedContent.length} chars): "${retrievedContent.substring(0, 100)}..."`);
+
+                // If AnythingLLM basically says it found nothing, we treat it as empty to trigger autonomous generation
+                if (retrievedContent.toLowerCase().includes("no se ha encontrado") || retrievedContent.length < 50) {
+                    console.warn("[Generate API] AnythingLLM returned insufficient content. Switching to autonomous mode.");
+                    retrievedContent = "";
+                }
             } else {
-                console.error(`[Generate API] AnythingLLM Error: ${response.status}`);
+                const errorBody = await response.text();
+                console.error(`[Generate API] AnythingLLM Error ${response.status}:`, errorBody);
             }
         } catch (e: any) {
-            console.error(`[Generate API] Stage 1 failed:`, e.message);
+            console.error(`[Generate API] Stage 1 (Retrieval) failed:`, e.message);
         }
     }
 
@@ -107,7 +114,7 @@ ESQUEMA JSON REQUERIDO:
     }
   ]
 }`
-        : `Genera de forma autónoma ${chunkSize} preguntas de oposición sobre ${isAllFiles ? 'Derecho y Temario General' : targetFileName} con dificultad ${difficulty}.
+        : `Genera de forma autónoma ${chunkSize} preguntas de oposición de alta calidad sobre ${isAllFiles ? 'Temario de Oposiciones' : targetFileName} con dificultad ${difficulty}.
 Responde ÚNICAMENTE con este formato JSON:
 {
   ${chunkIndex === 0 ? '"examTitle": "Test ' + (isAllFiles ? 'General' : targetFileName) + '",' : ''}
@@ -122,40 +129,40 @@ Responde ÚNICAMENTE con este formato JSON:
 }`;
 
     // Stage 2: JSON Synthesis
+    let lastAIErr = "";
     try {
         if (openai) {
-            console.log(`[Generate API] Synthesizing JSON with OpenAI...`);
+            console.log(`[Generate API] Synthesizing JSON with OpenAI (Size: ${chunkSize})...`);
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [
-                    { role: "system", content: "Eres un generador de exámenes que responde exclusivamente en formato JSON." },
+                    { role: "system", content: "Genera exámenes en formato JSON siguiendo estrictamente el esquema solicitado." },
                     { role: "user", content: synthesisPrompt }
                 ],
                 response_format: { type: "json_object" }
             });
 
-            const content = completion.choices[0].message.content;
-            console.log(`[Generate API] OpenAI Response Received (${content?.length || 0} chars)`);
+            const content = completion.choices[0].message.content || "{}";
+            const parsed = extractJSON(content);
 
-            const parsed = JSON.parse(content || "{}");
             if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-                console.log(`[Generate API] OpenAI successfully parsed ${parsed.questions.length} questions.`);
+                console.log(`[Generate API] OpenAI Success: ${parsed.questions.length} questions.`);
                 return {
                     examTitle: parsed.examTitle,
                     questions: parsed.questions
                 };
-            } else {
-                console.error("[Generate API] OpenAI returned invalid JSON or empty questions:", content);
             }
+            lastAIErr = "El formato JSON de OpenAI no contenía preguntas válidas.";
         }
     } catch (e: any) {
-        console.error(`[Generate API] OpenAI Synthesis Error:`, e.message);
+        console.error(`[Generate API] OpenAI Error:`, e.message);
+        lastAIErr = e.message;
     }
 
     // Fallback: Gemini
     if (GEMINI_KEY) {
         try {
-            console.log(`[Generate API] Synthesizing JSON with Gemini (Fallback)...`);
+            console.log(`[Generate API] Attempting Fallback with Gemini...`);
             const genAI = new GoogleGenerativeAI(GEMINI_KEY);
             const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
             const result = await model.generateContent(synthesisPrompt);
@@ -170,8 +177,8 @@ Responde ÚNICAMENTE con este formato JSON:
     }
 
     const finalError = !retrievedContent && (ALLM_URL && ALLM_KEY)
-        ? "No se pudo recuperar contenido del temario y la síntesis autónoma falló."
-        : "Error en la síntesis final de la IA.";
+        ? "No se pudo recuperar contenido del temario y la generación autónoma también falló."
+        : `Error en la síntesis final (${lastAIErr || 'IA no respondió correctamente'}).`;
 
     return { questions: [], error: finalError };
 }
