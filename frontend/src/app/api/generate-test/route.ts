@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
 
 export const maxDuration = 120;
@@ -9,11 +8,10 @@ export const dynamic = 'force-dynamic';
 const ALLM_URL = process.env.NEXT_PUBLIC_ANYTHINGLLM_URL;
 const ALLM_KEY = process.env.NEXT_PUBLIC_ANYTHINGLLM_KEY;
 const ALLM_WORKSPACE = process.env.NEXT_PUBLIC_ANYTHINGLLM_WORKSPACE;
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
 // Log API key availability during module load (masked for safety)
-console.log(`[Generate API] Init: OpenAI Key: ${OPENAI_KEY ? 'Present' : 'MISSING'}, Gemini Key: ${GEMINI_KEY ? 'Present' : 'MISSING'}`);
+console.log(`[Generate API] Init: OpenAI Key: ${OPENAI_KEY ? 'Present' : 'MISSING'}`);
 
 /**
  * Helper to extract JSON from a text that might contain markdown blocks or control chars
@@ -62,9 +60,8 @@ async function generateChunk(
 
     console.log(`[Generate API] Chunk ${chunkIndex + 1}/${totalChunks} (size: ${chunkSize})`);
 
-    // Verify keys inside function to catch dynamic env changes
+    // Verify key inside function to catch dynamic env changes
     const curOpenAIKey = process.env.OPENAI_API_KEY;
-    const curGeminiKey = process.env.GEMINI_API_KEY;
 
     const isAllFiles = !targetFileName || targetFileName === 'all';
     const fileContext = isAllFiles
@@ -157,36 +154,10 @@ REGLAS:
             lastAIErr = `OpenAI Error: ${e.message}`;
         }
     } else {
-        lastAIErr = "OpenAI Key no detectada.";
+        lastAIErr = "OpenAI Key no detectada en environment.";
     }
 
-    // Stage 3: Gemini Fallback (Always try if OpenAI fails or is missing)
-    if (curGeminiKey) {
-        try {
-            console.log("[Generate API] Gemini Fallback Start...");
-            const genAI = new GoogleGenerativeAI(curGeminiKey);
-            const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-            const result = await model.generateContent(synthesisPrompt);
-            const textResp = result.response.text();
-            const parsed = extractJSON(textResp);
-
-            if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-                console.log(`[Generate API] Gemini Fallback OK (${parsed.questions.length} q).`);
-                return {
-                    examTitle: parsed.examTitle || (targetFileName ? `Test ${targetFileName}` : "Test"),
-                    questions: parsed.questions
-                };
-            }
-            lastAIErr += " | Gemini fallback también devolvió vacío.";
-        } catch (e: any) {
-            console.error(`[Generate API] Gemini Fail: ${e.message}`);
-            lastAIErr += ` | Gemini Error: ${e.message}`;
-        }
-    } else {
-        lastAIErr += " | Gemini Key no detectada.";
-    }
-
-    return { questions: [], error: `Error síntesis: ${lastAIErr}` };
+    return { questions: [], error: `Fallo síntesis: ${lastAIErr}` };
 }
 
 export async function POST(req: Request) {
