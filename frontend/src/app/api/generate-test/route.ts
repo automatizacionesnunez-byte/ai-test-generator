@@ -106,18 +106,23 @@ Escribe los enunciados y las respuestas correctas.`;
     }
 
     const synthesisPrompt = retrievedContent
-        ? `TRANSFORMA EN JSON ESTE CONTENIDO DE OPOSICIÓN:
+        ? `TRANSFORMA EN JSON ESTE CONTENIDO TÉCNICO DE OPOSICIÓN:
 "${retrievedContent}"
 
-REGLAS:
-- Genera exactamente ${chunkSize} preguntas.
-- Formato: { "questions": [{ "question": "...", "options": ["A","B","C","D"], "correctAnswer": 0, "explanation": "..." }] }
-- Respuesta corta y técnica.`
-        : `GENERA ${chunkSize} PREGUNTAS DE OPOSICIÓN EN JSON:
-TEMA: ${targetFileName || 'Temario General'}
+REGLAS CRÍTICAS:
+- Genera exactamente ${chunkSize} preguntas detalladas.
+- LAS OPCIONES DEBEN SER TEXTO REAL Y DESCRIPTIVO. 
+- PROHIBIDO usar solo letras (A, B, C, D) como texto de las opciones.
+- Cada opción debe ser una respuesta plausible relacionada con la pregunta.
+- Formato Estricto JSON: { "questions": [{ "question": "...", "options": ["Texto de opción 1", "Texto de opción 2", "Texto de opción 3", "Texto de opción 4"], "correctAnswer": 0, "explanation": "..." }] }`
+        : `GENERA ${chunkSize} PREGUNTAS DE EXAMEN DE OPOSICIÓN SOBRE: ${targetFileName || 'Temario General'}
 DIFICULTAD: ${difficulty}
-REGLAS:
-- Formato: { "questions": [{ "question": "...", "options": ["A","B","C","D"], "correctAnswer": 0, "explanation": "..." }] }`;
+
+REGLAS CRÍTICAS:
+- Las preguntas deben ser técnicas y profesionales.
+- PROHIBIDO usar Literales o Letras (A, B, C, D) como el contenido de las opciones.
+- Las opciones deben contener explicaciones o datos reales del tema.
+- Formato Estricto JSON: { "questions": [{ "question": "...", "options": ["Respuesta técnica 1", "Respuesta técnica 2", "Respuesta técnica 3", "Respuesta técnica 4"], "correctAnswer": 0, "explanation": "..." }] }`;
 
     let lastAIErr = "";
 
