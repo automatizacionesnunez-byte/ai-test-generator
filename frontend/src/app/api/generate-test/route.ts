@@ -100,7 +100,7 @@ Reglas: 4 opciones, 'correctAnswer' (0-3), 'explanation'.`;
     let lastAIErr = "";
     try {
         if (openai) {
-            console.log(`[Generate API] OpenAI Synthesis Start...`);
+            console.log(`[Generate API] OpenAI Synthesis Start (Size: ${chunkSize})...`);
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [
@@ -111,8 +111,10 @@ Reglas: 4 opciones, 'correctAnswer' (0-3), 'explanation'.`;
             });
 
             const content = completion.choices[0].message.content || "{}";
-            console.log(`[Generate API] OpenAI Raw Result: ${content.substring(0, 100)}...`);
-            const parsed = JSON.parse(content);
+            console.log(`[Generate API] OpenAI Response Received (${content.length} chars).`);
+
+            // USE THE CLEANING HELPER (extractJSON) instead of direct JSON.parse
+            const parsed = extractJSON(content);
 
             if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
                 console.log(`[Generate API] OpenAI Success: ${parsed.questions.length} questions.`);
@@ -121,7 +123,7 @@ Reglas: 4 opciones, 'correctAnswer' (0-3), 'explanation'.`;
                     questions: parsed.questions
                 };
             }
-            lastAIErr = "JSON sin preguntas.";
+            lastAIErr = `Formato JSON inválido o sin preguntas. Resp: ${content.substring(0, 50)}...`;
         }
     } catch (e: any) {
         console.error(`[Generate API] OpenAI Error:`, e.message);
@@ -129,14 +131,24 @@ Reglas: 4 opciones, 'correctAnswer' (0-3), 'explanation'.`;
     }
 
     // Fallback Gemini
-    if (GEMINI_KEY && !retrievedContent) { // Only fallback if we don't have sensitive RAG content or as last resort
+    if (GEMINI_KEY) {
         try {
+            console.log(`[Generate API] Attempting Fallback with Gemini...`);
             const genAI = new GoogleGenerativeAI(GEMINI_KEY);
             const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
             const result = await model.generateContent(synthesisPrompt);
-            const parsed = extractJSON(result.response.text());
-            if (parsed && Array.isArray(parsed.questions)) return parsed;
-        } catch (e) { console.error("Gemini failed too"); }
+            const textResp = result.response.text();
+            const parsed = extractJSON(textResp);
+            if (parsed && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+                console.log("[Generate API] Gemini Fallback Success.");
+                return {
+                    examTitle: parsed.examTitle || (targetFileName ? `Test ${targetFileName}` : "Test"),
+                    questions: parsed.questions
+                };
+            }
+        } catch (e: any) {
+            console.error("[Generate API] Gemini fallback failed:", e.message);
+        }
     }
 
     return { questions: [], error: `Error en síntesis: ${lastAIErr || 'IA no respondió'}` };
